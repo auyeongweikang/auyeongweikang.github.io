@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portfolio Terminal (prototype)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- The ?v= suffix makes browsers drop copies they cached before serve.py turned caching off. -->
+  <link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+  <header class="topbar">
+    <div class="cmd">
+      <span class="prompt">&gt;</span>
+      <button class="ctx" id="ctx" hidden title="Clear the loaded ticker"></button>
+      <input id="cmdInput" autocomplete="off" spellcheck="false" aria-label="Command bar"
+             placeholder="Type a command or a ticker. Press ` to focus">
+    </div>
+    <nav class="pins" id="pins" aria-label="Shortcuts"></nav>
+    <div class="top-right">
+      <button class="pill" data-cmd="CONTACT">OPEN TO ROLES</button>
+      <span class="clock" id="clock"></span>
+    </div>
+    <div class="palette" id="palette" hidden></div>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <div class="ws-empty" id="wsEmpty" hidden>
+      <div>All windows are closed.</div>
+      <div>Open one:
+        <button class="chip" data-cmd="QM">QM</button>
+        <button class="chip" data-cmd="N">N</button>
+        <button class="chip" data-cmd="ABOUT">ABOUT</button>
+        or <button class="chip" data-act="reset">RESET LAYOUT</button>
+      </div>
+    </div>
+    <section class="panel" id="p-qm">
+      <div class="panel-head">
+        <span class="title">QUOTE MONITOR</span>
+        <span class="sub">MY CALLS</span>
+        <span class="sp"></span>
+        <button class="icon" data-go="#/help" title="Help">?</button>
+        <button class="icon" data-act="max" title="Maximise or restore">⤢</button>
+        <button class="icon" data-act="close" title="Close">×</button>
+      </div>
+      <div class="tabs" id="qmTabs"></div>
+      <div class="panel-body"><table class="grid" id="qmTable"></table></div>
+      <div class="panel-foot qm-foot">
+        <input id="qmQ" autocomplete="off" spellcheck="false" placeholder="Find a ticker" aria-label="Filter the quote monitor by ticker or name">
+        <span class="qm-note" id="qmFoot"></span>
+      </div>
+    </section>
+
+    <section class="panel" id="p-wire">
+      <div class="panel-head">
+        <span class="title">UPDATES</span>
+        <span class="sub" id="wireSub">ALL</span>
+        <span class="sp"></span>
+        <button class="icon" data-act="max" title="Maximise or restore">⤢</button>
+        <button class="icon" data-act="close" title="Close">×</button>
+      </div>
+      <div class="toolbar">
+        <input id="wireQ" placeholder="Search headlines" aria-label="Search updates">
+        <select id="wireType" aria-label="Filter by type">
+          <option value="ALL">All types</option>
+          <option>THESIS</option><option>UPDATE</option><option>MODEL</option><option>NOTE</option><option>SITE</option>
+        </select>
+        <button class="tkchip" id="wireTk" hidden title="Clear ticker filter"></button>
+        <span class="sp"></span>
+        <span class="muted" id="wireCount"></span>
+      </div>
+      <div class="panel-body">
+        <table class="grid wire">
+          <colgroup><col style="width:138px"><col style="width:68px"><col><col style="width:66px"></colgroup>
+          <thead><tr><th class="l">Date</th><th class="l">Type</th><th class="l">Headline</th><th class="l">Ticker</th></tr></thead>
+          <tbody id="wireBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="p-main">
+      <div class="panel-head">
+        <span class="title" id="mainTitle"></span>
+        <span class="sub" id="mainSub"></span>
+        <span class="sp"></span>
+        <button class="icon" data-act="max" title="Maximise or restore">⤢</button>
+        <button class="icon" data-act="close" title="Close">×</button>
+      </div>
+      <div class="panel-body" id="mainBody"></div>
+    </section>
+
+    <section class="panel" id="p-contact">
+      <div class="panel-head">
+        <span class="title">CONTACT</span>
+        <span class="sp"></span>
+        <button class="icon" data-act="max" title="Maximise or restore">⤢</button>
+        <button class="icon" data-act="close" title="Close">×</button>
+      </div>
+      <div class="panel-body" id="contactBody"></div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <nav class="ws-tabs" id="wsTabs" aria-label="Screens"></nav>
+    <button class="reset" data-act="reset" title="Put every window back in its default place">⟲ Reset layout</button>
+    <span class="sp"></span>
+    <span class="status-note" id="statusNote"></span>
+    <!-- Lives in the status bar so it never covers a window's resize handles. -->
+    <div class="banner" id="banner" hidden>
+      <button class="banner-text" id="bannerText"></button>
+      <button class="banner-x" data-act="banner-x" title="Dismiss">×</button>
+    </div>
+    <!-- Text size for the whole terminal: small, medium, large. -->
+    <div class="ui-fs" role="group" aria-label="Text size">
+      <button data-act="uifont" data-v="0" title="Small text" aria-label="Small text">A</button>
+      <button data-act="uifont" data-v="1" title="Medium text" aria-label="Medium text">A</button>
+      <button data-act="uifont" data-v="2" title="Large text" aria-label="Large text">A</button>
+    </div>
+  </footer>
+
+  <script src="data.js?v=3"></script>
+  <script src="app.js?v=4"></script>
+</body>
+</html>
