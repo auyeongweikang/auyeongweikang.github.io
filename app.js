@@ -681,25 +681,15 @@
       <div class="hero"><div class="avatar">${esc(o.initials)}</div><div><h1>${esc(o.name)}</h1><div class="muted">${esc(o.role)}</div></div></div>
       <p class="lead">${esc(o.tagline)}</p>
       <div class="callout">New here? Click any row in the quote monitor to open the thesis behind it.<br>
-        Or run a command: ${cmdChip('QM')} ${cmdChip('N')} ${cmdChip('CV')} ${cmdChip('CONTACT')} ${cmdChip('HELP')}</div>
+        Or run a command: ${cmdChip('QM')} ${cmdChip('N')} ${cmdChip('CONTACT')} ${cmdChip('HELP')}</div>
       <h2>Track record</h2>${trackRecord()}
       <p class="note" style="margin-top:8px">Calculated from the monitor, closed calls included.${D.hasSamples ? ' Includes sample data.' : ''}</p>
-      <h2>Education</h2>${rowsTable(o.education)}
-      <h2>Experience</h2>${rowsTable(o.experience)}
-      <h2>Skills</h2><p>${o.skills.map((s) => `<span class="tkchip">${esc(s)}</span>`).join(' ')}</p>
+      ${o.education.length ? `<h2>Education</h2>${rowsTable(o.education)}` : ''}
+      ${o.experience.length ? `<h2>Experience</h2>${rowsTable(o.experience)}` : ''}
+      ${o.skills.length ? `<h2>Skills</h2><p>${o.skills.map((s) => `<span class="tkchip">${esc(s)}</span>`).join(' ')}</p>` : ''}
     </div>`;
   }
-  function viewCV() {
-    const o = D.owner;
-    return `<div class="page"><h1>${esc(o.name)}</h1><p class="muted">${esc(o.role)}</p>
-      <p><button class="btn" disabled title="Placeholder: this will download your CV">Download CV (PDF)</button></p>
-      <h2>Education</h2>${rowsTable(o.education)}
-      <h2>Experience</h2>${rowsTable(o.experience)}
-      <h2>Research on this site</h2>
-      ${rowsTable(D.ideas.filter((i) => i.thesis || i.thesisDoc).map((i) => [i.ticker, i.name, i.blurb]))}
-      <h2>Skills</h2><p>${o.skills.map((s) => `<span class="tkchip">${esc(s)}</span>`).join(' ')}</p></div>`;
-  }
-  // The contents of the Contact window, which the CONTACT command opens.
+
   function viewContact() {
     const o = D.owner;
     const a = (href, text) => `<a href="${esc(href)}"${/^https?:/.test(href) ? ' target="_blank" rel="noopener"' : ''}>${esc(text)}</a>`;
@@ -952,7 +942,6 @@
         if (c === 'n') { state.wire.ticker = i.ticker; renderWire(); return focusPanel('p-wire'); }
       }
     } else if (a === 'n' && postBy[b]) setMain('UPDATE', postBy[b].tickers.join(' '), viewPost(postBy[b]));
-    else if (a === 'cv') setMain('CV', '', viewCV());
     else if (a === 'help') setMain('HELP', '', viewHelp());
     else setMain('ABOUT', '', viewAbout());
     focusPanel('p-main');
@@ -964,7 +953,6 @@
     { code: 'ABOUT', desc: 'Who I am and what this terminal is', run: () => go('#/about') },
     { code: 'QM', desc: 'Quote monitor: every idea I track, with my call and the return since', run: () => focusPanel('p-qm') },
     { code: 'N', desc: 'Updates wire: thesis changes, model revisions and notes', run: () => { clearWire(); focusPanel('p-wire'); } },
-    { code: 'CV', desc: 'Education, experience and a downloadable CV', run: () => go('#/cv') },
     { code: 'CONTACT', desc: 'Email, phone and profiles, in a window of their own', run: () => focusPanel('p-contact') },
     { code: 'HELP', desc: 'Commands and keyboard shortcuts', run: () => go('#/help') },
   ];
@@ -1170,7 +1158,7 @@
   setUiFont(savedSize, false);
 
   // ---------- boot ----------
-  $('#pins').innerHTML = ['QM', 'N', 'ABOUT', 'CV', 'HELP'].map(cmdChip).join('');
+  $('#pins').innerHTML = ['QM', 'N', 'ABOUT', 'HELP'].map(cmdChip).join('');
   $('#contactBody').innerHTML = viewContact();
   $('#statusNote').textContent = `${D.hasSamples ? 'INCLUDES SAMPLE DATA · ' : ''}PRICES AS OF ${fmtDate(D.asOf).toUpperCase()} · PERSONAL VIEWS, NOT INVESTMENT ADVICE · v0.1`;
   $('#bannerText').textContent = `LATEST · ${fmtDate(posts[0].date).toUpperCase()} | ${posts[0].headline}`;
