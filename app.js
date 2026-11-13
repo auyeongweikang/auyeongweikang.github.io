@@ -123,7 +123,7 @@
     }).join('');
     const none = q ? `No ticker matches “${esc(state.qmQ.trim())}” in this tab` : 'Nothing here yet';
     $('#qmTable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="8" class="empty">${none}</td></tr>`}</tbody>`;
-    $('#qmFoot').textContent = `Prices as of ${fmtDate(D.asOf)} · Sample data${rows.some((i) => i.placeholder) ? ' · * Placeholder figures' : ''}`;
+    $('#qmFoot').textContent = `Prices as of ${fmtDate(D.asOf)}${D.hasSamples ? ' · Includes sample data' : ''}${rows.some((i) => i.placeholder) ? ' · * Placeholder figures' : ''}`;
     tabsMore();
   }
   // The tab strip has no scrollbar. Its right edge fades while tabs are hidden
@@ -683,7 +683,7 @@
       <div class="callout">New here? Click any row in the quote monitor to open the thesis behind it.<br>
         Or run a command: ${cmdChip('QM')} ${cmdChip('N')} ${cmdChip('CV')} ${cmdChip('CONTACT')} ${cmdChip('HELP')}</div>
       <h2>Track record</h2>${trackRecord()}
-      <p class="note" style="margin-top:8px">Calculated from the monitor, closed calls included. Sample data.</p>
+      <p class="note" style="margin-top:8px">Calculated from the monitor, closed calls included.${D.hasSamples ? ' Includes sample data.' : ''}</p>
       <h2>Education</h2>${rowsTable(o.education)}
       <h2>Experience</h2>${rowsTable(o.experience)}
       <h2>Skills</h2><p>${o.skills.map((s) => `<span class="tkchip">${esc(s)}</span>`).join(' ')}</p>
@@ -1172,7 +1172,7 @@
   // ---------- boot ----------
   $('#pins').innerHTML = ['QM', 'N', 'ABOUT', 'CV', 'HELP'].map(cmdChip).join('');
   $('#contactBody').innerHTML = viewContact();
-  $('#statusNote').textContent = `SAMPLE DATA · PRICES AS OF ${fmtDate(D.asOf).toUpperCase()} · PERSONAL VIEWS, NOT INVESTMENT ADVICE · v0.1`;
+  $('#statusNote').textContent = `${D.hasSamples ? 'INCLUDES SAMPLE DATA · ' : ''}PRICES AS OF ${fmtDate(D.asOf).toUpperCase()} · PERSONAL VIEWS, NOT INVESTMENT ADVICE · v0.1`;
   $('#bannerText').textContent = `LATEST · ${fmtDate(posts[0].date).toUpperCase()} | ${posts[0].headline}`;
   $('#banner').hidden = false;
   const tick = () => { $('#clock').textContent = new Date().toLocaleTimeString('en-GB'); };
