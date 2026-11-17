@@ -512,8 +512,15 @@ table.pos { width: auto; min-width: 100%; }
 
 /* ---------- narrower layouts ---------- */
 @container (max-width: 560px) {
-  .des { grid-template-columns: 1fr; }
-  .cols2 { grid-template-columns: 1fr; }
+  /* minmax(0, 1fr), not 1fr: a plain 1fr column grows to fit its widest content
+     (a line that does not wrap), which pushed the page wider than a phone screen. */
+  .des { grid-template-columns: minmax(0, 1fr); }
+  .cols2 { grid-template-columns: minmax(0, 1fr); }
+  /* The price drops under the description instead of squeezing it into a narrow column. */
+  .sec-top { flex-wrap: wrap; }
+  .sec-top > :first-child { flex: 1 1 100%; min-width: 0; }
+  .sec-px { text-align: left; }
+  .sec-px .px { display: inline; margin-right: 8px; }
 }
 @media (max-width: 1100px) {
   .clock { display: none; }
