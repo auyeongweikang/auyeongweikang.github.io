@@ -324,6 +324,19 @@ ul.tight li { margin-bottom: 5px; }
 .mini.posts td:first-child { color: var(--muted); }
 .mini button { text-align: left; }
 .mini button:hover { color: var(--accent); }
+/* Checkpoints: a mark, what has to happen with its dates beneath, and the outcome on the right. */
+.cp-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.cp-h span { text-transform: none; letter-spacing: 0; font-size: 11px; font-weight: 400; color: var(--dim); }
+.cp-flag { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+.cps { width: 100%; border-collapse: collapse; }
+.mini.cps td:first-child { color: var(--muted); width: 12px; padding-right: 6px; }
+.cps .d { color: var(--dim); font-size: 11px; }
+.cps td.cp-t { width: 1%; white-space: nowrap; }
+.cps .tkchip { margin: 0; }
+.mini.cps td.cp-o { width: 1%; text-align: right; white-space: nowrap; color: var(--muted); padding-right: 0; }
+.cps tr.late td.cp-o { color: var(--text); }
+.cps tr.cp-sec td { color: var(--dim); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding-top: 8px; }
+.cps tr.cp-sec:first-child td { padding-top: 0; }
 
 .modelv .grid td.est, .modelv .grid th.est { background: rgba(var(--accent-rgb), .1); }
 .modelv .grid th.est { color: var(--accent); }

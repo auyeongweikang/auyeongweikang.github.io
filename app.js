@@ -191,7 +191,7 @@
       <div class="chart-bar"><span class="readout"></span><span class="sp"></span>${hist
         ? `<span class="rng">${RANGES.map(([n]) => `<button data-act="range" data-v="${n}" title="Show ${n === 'ALL' ? 'all history' : 'the last ' + n}">${n}</button>`).join('')}</span>` : ''}</div>
       <div class="plot"></div>
-      <div class="note">${hist ? `Daily closing prices, ${fmtDate(hist[0][0])} to ${fmtDate(hist[hist.length - 1][0])}. Source: Yahoo Finance.` : 'Illustrative price path, not real price history.'}</div>
+      <div class="note">${hist ? `Daily closing prices, ${fmtDate(hist[0][0])} to ${fmtDate(hist[hist.length - 1][0])}. Source: Yahoo Finance.` : 'Illustrative price path, not real price history.'}${hist && (i.checkpoints || []).some(cpSettled) ? ' ✓ and ✗ on the date axis mark settled checkpoints; point at one to read it.' : ''}</div>
     </div>`;
   }
 
@@ -301,6 +301,20 @@
         <circle cx="${f(xi)}" cy="${f(y(i.entry))}" r="3.5" fill="#000" stroke="#d6d6d6" stroke-width="1.5"/>
         <text x="${f(flip ? xi - 5 : xi + 5)}" y="${T - 9}" fill="#d6d6d6" font-size="11"${flip ? ' text-anchor="end"' : ''}>${i.stance === 'SHORT' ? 'SHORT' : 'LONG'} ${fmtDate(i.initiated)} @ ${px(i.entry)}</text>`;
     }
+    // Checkpoints settled inside the range shown: a mark on the date axis; the readout names them.
+    const cpAt = {};
+    if (m.dates && i.checkpoints) {
+      const first = m.dates[0], last = m.dates[m.dates.length - 1];
+      i.checkpoints.filter((c) => cpSettled(c) && c.settled >= first && c.settled <= last).forEach((c) => {
+        const k = m.dates.findIndex((d) => d >= c.settled);
+        (cpAt[k] = cpAt[k] || []).push(c);
+      });
+      Object.entries(cpAt).forEach(([k, cs]) => {
+        const xx = x(+k), good = cs.every(cpGood);
+        out += `<line x1="${f(xx)}" x2="${f(xx)}" y1="${yb - 6}" y2="${yb}" stroke="#d6d6d6"/>
+          <text x="${f(xx)}" y="${yb - 9}" fill="${good ? '#45a873' : '#ff4b5c'}" font-size="10" text-anchor="middle">${good ? '✓' : '✗'}</text>`;
+      });
+    }
     if (showTarget) {
       // The target tag steps aside when it would sit on the last-price tag.
       const tag = Math.abs(yt - yl) < 17 ? yl + (yt <= yl ? -17 : 17) : yt;
@@ -320,7 +334,7 @@
           <text class="xh-date" y="${yb + 16}" fill="#fff" font-size="11" text-anchor="middle"></text></g>
       </g></svg>`;
     plot.innerHTML = out;
-    box._m = { i, s, dates: m.dates, W, L, xe, x, y };
+    box._m = { i, s, dates: m.dates, W, L, xe, x, y, cpAt };
     box.querySelectorAll('.rng button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.range));
     chartReadout(box, s.length - 1);
     if (!box._wired) {
@@ -346,6 +360,7 @@
         const r = (i.stance === 'SHORT' ? i.entry - v : v - i.entry) / i.entry;
         html += ` · ${i.position ? 'Stock since call' : 'Since call'} <span class="${cls(r)}">${pct(r)}</span>`;
       }
+      if (m.cpAt[k]) html += ' · ' + m.cpAt[k].map((c) => `${cpMark(c)} <b>${esc(c.what)}</b>`).join(' · ');
     } else html += ' · Illustrative path';
     $('.readout', box).innerHTML = html;
   }
@@ -375,6 +390,64 @@
   const kv = (rows) => `<table class="kv">${rows.map(([k, v, c]) => `<tr><td>${esc(k)}</td><td class="${c || ''}">${esc(v)}</td></tr>`).join('')}</table>`;
   const tickerPosts = (t) => posts.filter((p) => p.tickers.includes(t));
 
+  // ---------- checkpoints ----------
+  // i.checkpoints come from the Checkpoints section of the ticker note (build_site.py reads
+  // them): NEED is what the call needs to happen, EXIT is what would make me close it. A
+  // settled checkpoint went the call's way when a NEED was met or an EXIT did not happen.
+  const cpSettled = (c) => c.status === 'met' || c.status === 'missed';
+  const cpGood = (c) => (c.status === 'met') === (c.kind === 'NEED');
+  const cpMark = (c) => (cpSettled(c) ? (cpGood(c) ? '<span class="up">✓</span>' : '<span class="down">✗</span>') : c.status === 'dropped' ? '–' : '○');
+  const anyCheckpoints = D.ideas.some((i) => i.checkpoints);
+  // A checkpoint written down after its answer was known (hindsight) is shown but not counted.
+  function cpTally(cps) {
+    const settled = cps.filter((c) => cpSettled(c) && !c.hindsight), good = settled.filter(cpGood).length;
+    return { settled: settled.length, good, bad: settled.length - good, open: cps.filter((c) => c.status === 'pending').length };
+  }
+  function cpOutcome(c) {
+    if (c.status === 'pending') return c.overdue ? 'awaiting update' : c.auto ? 'watching the price' : 'open';
+    if (c.status === 'dropped') return 'dropped' + (c.settled ? ' ' + fmtDate(c.settled) : '');
+    return `${c.kind === 'NEED' ? c.status : c.status === 'met' ? 'happened' : 'did not happen'} ${fmtDate(c.settled)}`;
+  }
+  // One row: the mark, what has to happen with its dates beneath, and the outcome
+  // (a link to the update about it, when there is one). tk adds a ticker column.
+  function cpRow(c, tk) {
+    const out = esc(cpOutcome(c));
+    const detail = [c.due === 'any time' ? 'any time' : `by ${c.due}`, `set ${fmtDate(c.set)}`]
+      .concat(c.price != null ? [`closed at ${px(c.price)}`] : [], c.hindsight ? ['added after it was settled, so not counted'] : []).join(' · ');
+    return `<tr class="${c.overdue ? 'late' : ''}"><td class="cp-m">${cpMark(c)}</td>${tk ? `<td class="cp-t"><button class="tkchip" data-go="#/s/${tk}">${tk}</button></td>` : ''}
+      <td>${esc(c.what)}<div class="d">${esc(detail)}</div></td>
+      <td class="cp-o">${c.post ? `<button data-go="#/n/${c.post}">${out} ›</button>` : out}</td></tr>`;
+  }
+  const cpKey = '<p class="note">Each checkpoint is dated from the day it first appeared on this site. ✓ went the call’s way, ✗ went against it.</p>';
+  function checkpointsBlock(i) {
+    const cps = i.checkpoints;
+    if (!cps) return '';
+    const t = cpTally(cps);
+    const hit = i.status !== 'closed' && cps.find((c) => c.kind === 'EXIT' && c.status === 'met');
+    const group = (kind, title) => {
+      const rows = cps.filter((c) => c.kind === kind);
+      return rows.length ? `<tr class="cp-sec"><td colspan="3">${title}</td></tr>${rows.map((c) => cpRow(c)).join('')}` : '';
+    };
+    return `<h2 class="cp-h">Checkpoints<span>${t.good} for the call · ${t.bad} against · ${t.open} open</span></h2>
+      ${hit ? `<p class="cp-flag">An exit checkpoint was met on ${fmtDate(hit.settled)} and the call is still open.</p>` : ''}
+      <table class="mini cps">${group('NEED', 'What the call needs')}${group('EXIT', 'What would make me close it')}</table>${cpKey}`;
+  }
+  // The CP page: every open checkpoint across the calls, soonest first, then the settled ones.
+  function viewCheckpoints() {
+    const all = D.ideas.flatMap((i) => (i.checkpoints || []).map((c) => ({ c, i })));
+    const open = all.filter(({ c, i }) => c.status === 'pending' && i.status !== 'closed')
+      .sort((a, b) => (a.c.by || '9999').localeCompare(b.c.by || '9999') || a.i.ticker.localeCompare(b.i.ticker));
+    const done = all.filter(({ c }) => cpSettled(c)).sort((a, b) => b.c.settled.localeCompare(a.c.settled));
+    const t = cpTally(all.map(({ c }) => c));
+    const table = (rows) => `<table class="mini cps">${rows.map(({ c, i }) => cpRow(c, i.ticker)).join('')}</table>`;
+    return `<div class="page"><h1>Checkpoints</h1>
+      <p class="lead">What each call needs to happen, and what would make me close it, written down before the answer is known.</p>
+      ${t.settled ? `<p class="muted">${t.good} of ${t.settled} settled checkpoints went the call’s way.</p>` : ''}
+      <h2>Open, soonest first</h2>${open.length ? table(open) : '<p class="muted">None open.</p>'}
+      ${done.length ? `<h2>Settled, latest first</h2>${table(done)}` : ''}
+      ${cpKey}</div>`;
+  }
+
   function secNav(i, on) {
     const tab = (id, label, sub) => `<button class="tab${on === id ? ' on' : ''}" data-go="#/s/${i.ticker}${sub}">${label}</button>`;
     return `<div class="secnav">${tab('des', 'DES', '')}${tab('thesis', 'THESIS', '/thesis')}${tab('model', 'MODEL', '/model')}<button class="tab" data-go="#/s/${i.ticker}/n">N</button></div>`;
@@ -392,6 +465,10 @@
     if (i.status === 'active' && !pos) call.push(['To target', pct(c.upside), cls(c.upside)]);
     if (i.status === 'closed') call.push(['Closed', fmtDate(i.closedOn)]);
     if (i.catalyst) call.push(['Next catalyst', i.catalyst.when]);
+    if (i.checkpoints) {
+      const t = cpTally(i.checkpoints);
+      call.push(['Checkpoints', t.settled ? `${t.good}/${t.settled} for the call` : `${t.open} open`]);
+    }
     return `<div class="des">
       <div>
         <div class="sec-top">
@@ -408,6 +485,7 @@
           <button class="btn" data-go="#/s/${i.ticker}/n">N ›</button>
         </div>
         <h2>Thesis in brief</h2>${list(i.summary)}
+        ${checkpointsBlock(i)}
         ${pos ? positionBlock(i) : ''}
         <h2>${pos ? 'Share price since the call' : 'Price since the call'}</h2>${chart(i)}
         ${i.drivers ? `<div class="cols2"><div><h2>Key drivers</h2>${list(i.drivers)}</div><div><h2>Risks</h2>${list(i.risks)}</div></div>` : ''}
@@ -668,11 +746,13 @@
     const rets = calls.map((i) => calc(i).ret);
     const avg = rets.reduce((a, b) => a + b, 0) / rets.length;
     const wins = rets.filter((r) => r > 0).length;
+    const cp = cpTally(D.ideas.flatMap((i) => i.checkpoints || []));
     return `<div class="statrow">
       <div class="stat"><b>${D.ideas.filter((i) => i.status === 'active').length}</b><span>active calls</span></div>
       <div class="stat"><b>${D.ideas.filter((i) => i.status === 'closed').length}</b><span>closed calls</span></div>
       <div class="stat"><b>${wins}/${calls.length}</b><span>in the money</span></div>
       <div class="stat"><b class="${cls(avg)}">${pct(avg)}</b><span>average return</span></div>
+      ${cp.settled ? `<div class="stat"><b>${cp.good}/${cp.settled}</b><span>checkpoints went my way</span></div>` : ''}
     </div>`;
   }
   function viewAbout() {
@@ -681,7 +761,7 @@
       <div class="hero"><div class="avatar">${esc(o.initials)}</div><div><h1>${esc(o.name)}</h1><div class="muted">${esc(o.role)}</div></div></div>
       <p class="lead">${esc(o.tagline)}</p>
       <div class="callout">New here? Click any row in the quote monitor to open the thesis behind it.<br>
-        Or run a command: ${cmdChip('QM')} ${cmdChip('N')} ${cmdChip('CONTACT')} ${cmdChip('HELP')}</div>
+        Or run a command: ${cmdChip('QM')} ${cmdChip('N')}${anyCheckpoints ? ' ' + cmdChip('CP') : ''} ${cmdChip('CONTACT')} ${cmdChip('HELP')}</div>
       <h2>Track record</h2>${trackRecord()}
       <p class="note" style="margin-top:8px">Calculated from the monitor, closed calls included.${D.hasSamples ? ' Includes sample data.' : ''}</p>
       ${o.education.length ? `<h2>Education</h2>${rowsTable(o.education)}` : ''}
@@ -943,6 +1023,7 @@
       }
     } else if (a === 'n' && postBy[b]) setMain('UPDATE', postBy[b].tickers.join(' '), viewPost(postBy[b]));
     else if (a === 'help') setMain('HELP', '', viewHelp());
+    else if (a === 'cp') setMain('CHECKPOINTS', '', viewCheckpoints());
     else setMain('ABOUT', '', viewAbout());
     focusPanel('p-main');
     if (a === 'contact') focusPanel('p-contact');  // an old link to the contact page
@@ -956,8 +1037,10 @@
     { code: 'CONTACT', desc: 'Email, phone and profiles, in a window of their own', run: () => focusPanel('p-contact') },
     { code: 'HELP', desc: 'Commands and keyboard shortcuts', run: () => go('#/help') },
   ];
+  // Offered once a ticker note has a Checkpoints section.
+  if (anyCheckpoints) GLOBAL.splice(3, 0, { code: 'CP', desc: 'Checkpoints: what each call needs next, soonest first', run: () => go('#/cp') });
   const TICKER = [
-    { code: 'DES', desc: 'Overview: my call, thesis in brief, chart and catalysts', sub: '' },
+    { code: 'DES', desc: 'Overview: my call, thesis in brief, checkpoints, chart and catalysts', sub: '' },
     { code: 'THESIS', desc: 'The full written thesis', sub: '/thesis' },
     { code: 'MODEL', desc: 'Financial model and scenario valuation', sub: '/model' },
     { code: 'N', desc: 'Updates on this name', sub: '/n' },
