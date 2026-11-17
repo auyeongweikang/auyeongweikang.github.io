@@ -409,10 +409,11 @@
     return `${c.kind === 'NEED' ? c.status : c.status === 'met' ? 'happened' : 'did not happen'} ${fmtDate(c.settled)}`;
   }
   // One row: the mark, what has to happen with its dates beneath, and the outcome
-  // (a link to the update about it, when there is one). tk adds a ticker column.
-  function cpRow(c, tk) {
+  // (a link to the update about it, when there is one). tk adds a ticker column; withKind
+  // starts the dates line with NEED or EXIT, for lists not split into the two groups.
+  function cpRow(c, tk, withKind) {
     const out = esc(cpOutcome(c));
-    const detail = [c.due === 'any time' ? 'any time' : `by ${c.due}`, `set ${fmtDate(c.set)}`]
+    const detail = (withKind ? [c.kind] : []).concat([c.due === 'any time' ? 'any time' : `by ${c.due}`, `set ${fmtDate(c.set)}`])
       .concat(c.price != null ? [`closed at ${px(c.price)}`] : [], c.hindsight ? ['added after it was settled, so not counted'] : []).join(' · ');
     return `<tr class="${c.overdue ? 'late' : ''}"><td class="cp-m">${cpMark(c)}</td>${tk ? `<td class="cp-t"><button class="tkchip" data-go="#/s/${tk}">${tk}</button></td>` : ''}
       <td>${esc(c.what)}<div class="d">${esc(detail)}</div></td>
@@ -432,25 +433,28 @@
       ${hit ? `<p class="cp-flag">An exit checkpoint was met on ${fmtDate(hit.settled)} and the call is still open.</p>` : ''}
       <table class="mini cps">${group('NEED', 'What the call needs')}${group('EXIT', 'What would make me close it')}</table>${cpKey}`;
   }
-  // The CP page: every open checkpoint across the calls, soonest first, then the settled ones.
-  function viewCheckpoints() {
-    const all = D.ideas.flatMap((i) => (i.checkpoints || []).map((c) => ({ c, i })));
-    const open = all.filter(({ c, i }) => c.status === 'pending' && i.status !== 'closed')
+  // The CP page: the open checkpoints, soonest first, then the settled and dropped ones,
+  // latest first. Across every call (the CP command), or for one ticker (ABVX CP).
+  function viewCheckpoints(tk) {
+    const all = (tk ? [ideaBy[tk]] : D.ideas).flatMap((i) => (i.checkpoints || []).map((c) => ({ c, i })));
+    // Across every call, a closed call's open checkpoints are left out; its own page shows them.
+    const open = all.filter(({ c, i }) => c.status === 'pending' && (tk || i.status !== 'closed'))
       .sort((a, b) => (a.c.by || '9999').localeCompare(b.c.by || '9999') || a.i.ticker.localeCompare(b.i.ticker));
-    const done = all.filter(({ c }) => cpSettled(c)).sort((a, b) => b.c.settled.localeCompare(a.c.settled));
+    const done = all.filter(({ c }) => c.status !== 'pending')
+      .sort((a, b) => (b.c.settled || b.c.set).localeCompare(a.c.settled || a.c.set));
     const t = cpTally(all.map(({ c }) => c));
-    const table = (rows) => `<table class="mini cps">${rows.map(({ c, i }) => cpRow(c, i.ticker)).join('')}</table>`;
-    return `<div class="page"><h1>Checkpoints</h1>
-      <p class="lead">What each call needs to happen, and what would make me close it, written down before the answer is known.</p>
+    const table = (rows) => `<table class="mini cps">${rows.map(({ c, i }) => cpRow(c, tk ? null : i.ticker, true)).join('')}</table>`;
+    return `<div class="page"><h1>${tk ? `${tk} checkpoints` : 'Checkpoints'}</h1>
+      <p class="lead">What ${tk ? 'the call' : 'each call'} needs to happen (NEED), and what would make me close it (EXIT), written down before the answer is known.</p>
       ${t.settled ? `<p class="muted">${t.good} of ${t.settled} settled checkpoints went the call’s way.</p>` : ''}
-      <h2>Open, soonest first</h2>${open.length ? table(open) : '<p class="muted">None open.</p>'}
+      ${all.length ? `<h2>Open, soonest first</h2>${open.length ? table(open) : '<p class="muted">None open.</p>'}` : '<p class="muted">No checkpoints for this name yet.</p>'}
       ${done.length ? `<h2>Settled, latest first</h2>${table(done)}` : ''}
       ${cpKey}</div>`;
   }
 
   function secNav(i, on) {
     const tab = (id, label, sub) => `<button class="tab${on === id ? ' on' : ''}" data-go="#/s/${i.ticker}${sub}">${label}</button>`;
-    return `<div class="secnav">${tab('des', 'DES', '')}${tab('thesis', 'THESIS', '/thesis')}${tab('model', 'MODEL', '/model')}<button class="tab" data-go="#/s/${i.ticker}/n">N</button></div>`;
+    return `<div class="secnav">${tab('des', 'DES', '')}${tab('thesis', 'THESIS', '/thesis')}${tab('model', 'MODEL', '/model')}${i.checkpoints ? tab('cp', 'CP', '/cp') : ''}<button class="tab" data-go="#/s/${i.ticker}/n">N</button></div>`;
   }
 
   function viewDes(i) {
@@ -1017,6 +1021,7 @@
       setCtx(i.ticker);
       if (c === 'thesis') setMain('THESIS', i.ticker, secNav(i, 'thesis') + viewThesis(i));
       else if (c === 'model') setMain('MODEL', i.ticker, secNav(i, 'model') + viewModel(i));
+      else if (c === 'cp') setMain('CHECKPOINTS', i.ticker, secNav(i, 'cp') + viewCheckpoints(i.ticker));
       else {
         setMain('DESCRIPTION', i.ticker, secNav(i, 'des') + viewDes(i));
         if (c === 'n') { state.wire.ticker = i.ticker; renderWire(); return focusPanel('p-wire'); }
@@ -1043,6 +1048,7 @@
     { code: 'DES', desc: 'Overview: my call, thesis in brief, checkpoints, chart and catalysts', sub: '' },
     { code: 'THESIS', desc: 'The full written thesis', sub: '/thesis' },
     { code: 'MODEL', desc: 'Financial model and scenario valuation', sub: '/model' },
+    { code: 'CP', desc: 'Checkpoints for this name: what the call needs, and what would close it', sub: '/cp' },
     { code: 'N', desc: 'Updates on this name', sub: '/n' },
   ];
   const input = $('#cmdInput'), pal = $('#palette');
@@ -1056,7 +1062,8 @@
     const rank = (a, b) => (b.code.startsWith(cq) ? 1 : 0) - (a.code.startsWith(cq) ? 1 : 0);
     const items = [];
     if (tk) {
-      TICKER.filter(match).sort(rank).forEach((c) => items.push({
+      // CP is offered only for a ticker that has checkpoints.
+      TICKER.filter((c) => c.code !== 'CP' || ideaBy[tk].checkpoints).filter(match).sort(rank).forEach((c) => items.push({
         group: 'COMMANDS',
         html: `<span class="chip tk">${tk}</span><span class="chip">${c.code}</span><span class="desc">${esc(c.desc)}</span>`,
         run: () => go(`#/s/${tk}${c.sub}`),
