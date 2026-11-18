@@ -886,14 +886,23 @@
     return '$' + v.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
   };
   const usdTick = (v) => '$' + v.toLocaleString('en-US', { maximumSignificantDigits: 3 });
+  // A counted chart (first column 1, 2, 3...) shows its figures as they are, labelled with the
+  // note's chart_unit: "$M" puts $ before the number and M after it; "%" goes after.
+  const unitFmt = (unit, dp) => {
+    const u = unit || '', pre = u.startsWith('$') ? '$' : '', post = u.startsWith('$') ? u.slice(1) : u;
+    return (v) => (v == null ? '—' : (v < 0 ? '-' : '') + pre
+      + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: dp(v), maximumFractionDigits: dp(v) }) + post);
+  };
+  const pPoint = (ch, k) => (ch.axis ? `${ch.axis} ${ch.dates[k]}` : pDate(ch.dates[k]));
 
   function projChart(p) {
     const ch = p.chart;
     if (!ch || !ch.dates || ch.dates.length < 2) return '';
+    const note = ch.note || (ch.axis ? '' : 'Growth of $1, rebased at the first date.');
     return `<div class="chartbox pchart" data-pchart="${p.n}">
       <div class="chart-bar"><span class="readout"></span></div>
       <div class="plot"></div>
-      <div class="note">${esc(ch.note || 'Growth of $1, rebased at the first date.')}</div>
+      ${note ? `<div class="note">${esc(note)}</div>` : ''}
     </div>`;
   }
 
@@ -943,39 +952,61 @@
   function drawPChart(box) {
     const p = projBy[box.dataset.pchart], plot = $('.plot', box);
     if (!p || !p.chart || !plot) return;
-    const dates = p.chart.dates, n = dates.length;
-    // A missing value, or one not above zero (a log scale has no room for it), leaves a gap in its line.
-    const lines = p.chart.series.map((name, j) => {
-      const raw = p.chart.values[j] || [], base = raw.find((v) => v != null && v > 0);
+    const ch = p.chart, dates = ch.dates, n = dates.length, counted = !!ch.axis;
+    // Growth of $1: a missing value, or one not above zero (a log scale has no room for it), leaves
+    // a gap in its line. A counted chart keeps the figures as they are, on an ordinary scale.
+    const lines = ch.series.map((name, j) => {
+      const raw = ch.values[j] || [], base = raw.find((v) => v != null && v > 0);
       return { name, color: PCOLS[Math.min(j, PCOLS.length - 1)],
-        v: dates.map((_, k) => (base && raw[k] != null && raw[k] > 0 ? raw[k] / base : null)) };
+        v: dates.map((_, k) => (counted ? (raw[k] == null ? null : raw[k])
+          : base && raw[k] != null && raw[k] > 0 ? raw[k] / base : null)) };
     });
     const all = lines.flatMap((l) => l.v.filter((v) => v != null));
     if (!all.length) { plot.innerHTML = ''; $('.readout', box).textContent = 'No figures to chart'; return; }
     const W = Math.max(300, Math.round(plot.clientWidth)), H = W < 480 ? 220 : 280;
-    const L = 10, R = 52, T = 12, B = 24, xe = W - R, yb = H - B;
-    let lo = Math.log10(Math.min(...all)), hi = Math.log10(Math.max(...all));
-    const pad = Math.max((hi - lo) * 0.06, 0.02);
-    lo -= pad; hi += pad;
+    const L = 10, R = counted ? 60 : 52, T = 12, B = 24, xe = W - R, yb = H - B;
+    const most = Math.max(3, Math.floor((yb - T) / 30));
+    let lo, hi, y, ticks, tick;
+    if (counted) {
+      lo = Math.min(0, ...all); hi = Math.max(...all) * 1.06 || 1;
+      const step = niceStep(hi - lo, Math.min(most, 6));
+      ticks = [];
+      for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) ticks.push(+v.toPrecision(12));
+      y = (v) => T + ((hi - v) / (hi - lo)) * (yb - T);
+      tick = unitFmt(ch.unit, () => (step < 1 ? 1 : 0));
+    } else {
+      lo = Math.log10(Math.min(...all)); hi = Math.log10(Math.max(...all));
+      const pad = Math.max((hi - lo) * 0.06, 0.02);
+      lo -= pad; hi += pad;
+      ticks = logTicks(10 ** lo, 10 ** hi, most);
+      y = (v) => T + ((hi - Math.log10(v)) / (hi - lo)) * (yb - T);
+      tick = usdTick;
+    }
     const x = (k) => L + (k / (n - 1)) * (xe - L);
-    const y = (v) => T + ((hi - Math.log10(v)) / (hi - lo)) * (yb - T);
     const f = (v) => v.toFixed(1);
 
     let grid = '';
-    logTicks(10 ** lo, 10 ** hi, Math.max(3, Math.floor((yb - T) / 30))).forEach((v) => {
+    ticks.forEach((v) => {
       const yy = y(v);
       grid += `<line x1="${L}" x2="${xe + 4}" y1="${f(yy)}" y2="${f(yy)}" stroke="#1f1f1f"/>
-        <text x="${xe + 8}" y="${f(yy + 4)}" fill="#8f8f8f" font-size="11">${usdTick(v)}</text>`;
+        <text x="${xe + 8}" y="${f(yy + 4)}" fill="#8f8f8f" font-size="11">${tick(v)}</text>`;
     });
-    yearTicks(dates, x).forEach(({ k, label }) => {
+    // A counted chart labels every point when they fit, else about six of them.
+    const xTicks = counted
+      ? dates.map((d, k) => ({ k, label: d })).filter(({ k }) => k % Math.ceil(n / 6) === 0 || n <= 12)
+      : yearTicks(dates, x);
+    xTicks.forEach(({ k, label }) => {
       const xx = x(k), anchor = xx < L + 16 ? 'start' : xx > xe - 16 ? 'end' : 'middle';
       grid += `<line x1="${f(xx)}" x2="${f(xx)}" y1="${T}" y2="${yb + 4}" stroke="#1f1f1f"/>
         <text x="${f(xx)}" y="${yb + 16}" fill="#8f8f8f" font-size="11" text-anchor="${anchor}">${esc(label)}</text>`;
     });
     // Each line restarts after a gap. The project's own line is drawn last, so it sits on top.
     const path = (l) => l.v.map((v, k) => (v == null ? '' : `${k && l.v[k - 1] != null ? 'L' : 'M'}${f(x(k))},${f(y(v))}`)).join('');
-    const drawn = lines.map((l, j) => `<path d="${path(l)}" fill="none" stroke="${l.color}" stroke-width="${j ? 1.2 : 1.5}" stroke-linejoin="round"/>`).reverse().join('');
-    plot.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Growth of $1: ${esc(p.chart.series.join(', '))}">
+    // A counted chart has few points, so each one also gets a small dot (and a lone point still shows).
+    const dots = (l) => (counted ? l.v.map((v, k) => (v == null ? '' : `<circle cx="${f(x(k))}" cy="${f(y(v))}" r="2" fill="${l.color}"/>`)).join('') : '');
+    const drawn = lines.map((l, j) => `<path d="${path(l)}" fill="none" stroke="${l.color}" stroke-width="${j ? 1.2 : 1.5}" stroke-linejoin="round"/>${dots(l)}`).reverse().join('');
+    const label = counted ? `Chart by ${ch.axis.toLowerCase()}` : 'Growth of $1';
+    plot.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}: ${esc(ch.series.join(', '))}">
       ${grid}${drawn}
       <line x1="${L}" x2="${xe}" y1="${yb}" y2="${yb}" stroke="#474747"/>
       <line x1="${xe}" x2="${xe}" y1="${T}" y2="${yb}" stroke="#474747"/>
@@ -985,7 +1016,8 @@
         <g class="xh-d"><rect x="-38" y="${yb + 4}" width="76" height="16" fill="#474747"/>
           <text class="xh-date" y="${yb + 16}" fill="#fff" font-size="11" text-anchor="middle"></text></g>
       </g></svg>`;
-    box._m = { lines, dates, n, W, L, xe, x, y };
+    box._m = { lines, dates, n, W, L, xe, x, y, ch,
+      val: counted ? unitFmt(ch.unit, (v) => (Math.abs(v) < 10 && v % 1 ? 1 : 0)) : usd };
     pChartReadout(box, n - 1);
     if (!box._wired) {
       box._wired = true;
@@ -1001,8 +1033,8 @@
   // The line above the plot, which doubles as the legend: the date, then each line's value on it.
   function pChartReadout(box, k) {
     const m = box._m;
-    $('.readout', box).innerHTML = `<b>${esc(pDate(m.dates[k]))}</b>` + m.lines.map((l) =>
-      ` · <span class="ser"><i class="sw" style="background:${l.color}"></i>${esc(l.name)} <b>${usd(l.v[k])}</b></span>`).join('');
+    $('.readout', box).innerHTML = `<b>${esc(pPoint(m.ch, k))}</b>` + m.lines.map((l) =>
+      ` · <span class="ser"><i class="sw" style="background:${l.color}"></i>${esc(l.name)} <b>${m.val(l.v[k])}</b></span>`).join('');
   }
 
   // Crosshair: snaps to the nearest date, with a dot on every line that has a value there.
@@ -1021,7 +1053,7 @@
       if (v != null) dot.setAttribute('transform', `translate(${X},${m.y(v).toFixed(1)})`);
     });
     $('.xh-d', svg).setAttribute('transform', `translate(${Math.max(m.L + 38, Math.min(m.xe - 38, +X))},0)`);
-    $('.xh-date', svg).textContent = pDate(m.dates[k]);
+    $('.xh-date', svg).textContent = pPoint(m.ch, k);
     pChartReadout(box, k);
   }
 
