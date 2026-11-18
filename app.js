@@ -6,6 +6,9 @@
   const ideaBy = Object.fromEntries(D.ideas.map((i) => [i.ticker, i]));
   const posts = [...D.posts].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   const postBy = Object.fromEntries(posts.map((p) => [p.id, p]));
+  // Research and builds beyond the stock calls. A site with none shows no trace of them.
+  const projects = D.projects || [];
+  const projBy = Object.fromEntries(projects.map((p) => [p.code, p]));
 
   const state = {
     tab: 'Active',
@@ -353,7 +356,10 @@
       });
     }
   }
-  const drawCharts = () => document.querySelectorAll('.chartbox').forEach(drawChart);
+  const drawCharts = () => {
+    document.querySelectorAll('.chartbox[data-chart]').forEach(drawChart);
+    document.querySelectorAll('.chartbox[data-pchart]').forEach(drawPChart);
+  };
 
   // The line above the plot: the date and close under the pointer, or the latest when idle.
   function chartReadout(box, k) {
@@ -748,6 +754,8 @@
 
   // ---------- profile pages ----------
   const cmdChip = (code) => `<button class="chip" data-cmd="${code}">${code}</button>`;
+  // An address typed without https:// still opens as a web link.
+  const web = (addr) => (/^https?:\/\//i.test(addr) ? addr : 'https://' + addr);
   // Each row is [when, what, detail, bullet points]; the last two are optional.
   const rowsTable = (rows) => `<table class="rows">${rows.map(([w, t, d, pts]) => `<tr><td>${esc(w)}</td><td><b>${esc(t)}</b>${d ? `<div class="d">${esc(d)}</div>` : ''}${pts && pts.length ? `<ul class="pts">${pts.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</td></tr>`).join('')}</table>`;
 
@@ -771,9 +779,10 @@
       <div class="hero"><div class="avatar">${esc(o.initials)}</div><div><h1>${esc(o.name)}</h1><div class="muted">${esc(o.role)}</div></div></div>
       <p class="lead">${esc(o.tagline)}</p>
       <div class="callout">New here? Click any row in the quote monitor to open the thesis behind it.<br>
-        Or run a command: ${cmdChip('QM')} ${cmdChip('N')}${anyCheckpoints ? ' ' + cmdChip('CP') : ''} ${cmdChip('CONTACT')} ${cmdChip('HELP')}</div>
+        Or run a command: ${cmdChip('QM')} ${cmdChip('N')}${projects.length ? ' ' + cmdChip('PRJ') : ''}${anyCheckpoints ? ' ' + cmdChip('CP') : ''} ${cmdChip('CONTACT')} ${cmdChip('HELP')}</div>
       <h2>Track record</h2>${trackRecord()}
       <p class="note" style="margin-top:8px">Calculated from the monitor, closed calls included.${D.hasSamples ? ' Includes sample data.' : ''}</p>
+      ${projects.length ? `<h2>Projects</h2>${projectRows()}` : ''}
       ${o.education.length ? `<h2>Education</h2>${rowsTable(o.education)}` : ''}
       ${o.experience.length ? `<h2>Experience</h2>${rowsTable(o.experience)}` : ''}
       ${o.skills.length ? `<h2>Skills</h2><p>${o.skills.map((s) => `<span class="tkchip">${esc(s)}</span>`).join(' ')}</p>` : ''}
@@ -783,7 +792,6 @@
   function viewContact() {
     const o = D.owner;
     const a = (href, text) => `<a href="${esc(href)}"${/^https?:/.test(href) ? ' target="_blank" rel="noopener"' : ''}>${esc(text)}</a>`;
-    const web = (addr) => (/^https?:\/\//i.test(addr) ? addr : 'https://' + addr);
     const rows = [];
     if (o.email) rows.push(['Email', a('mailto:' + o.email, o.email)]);
     if (o.phone) rows.push(['Phone', a('tel:' + o.phone.replace(/[^\d+]/g, ''), o.phone)]);
@@ -797,11 +805,223 @@
     return `<div class="page"><h1>Help</h1>
       <p class="lead">Everything here works by clicking. The command bar is the faster way round.</p>
       <h2>Commands</h2><table class="grid" style="white-space:normal"><tbody>${g}</tbody></table>
+      ${projects.length ? `<p class="muted" style="margin-top:8px">Type a project’s code, for example <b>${esc(projects[0].code)}</b>, to open it.</p>` : ''}
       <h2>Ticker commands</h2><p class="muted">Type a ticker, then a command. For example <b>HLXB MODEL</b>.</p>
       <table class="grid" style="white-space:normal"><tbody>${t}</tbody></table>
       <h2>Keys</h2>${kv([['` or /', 'Focus the command bar'], ['↑ ↓', 'Move through results'], ['Enter', 'Run the highlighted result'], ['Esc', 'Close the results'], ['Backspace on empty bar', 'Clear the loaded ticker']])}
       <h2>Windows</h2>${kv([['Drag a title bar', 'Move the window'], ['Drag an edge or corner', 'Resize it; windows sharing that edge follow'], ['Alt + drag an edge', 'Resize one window on its own'], ['Double-click a title bar, or ⤢', 'Maximise or restore'], ['×', 'Close; QM, N, CONTACT or any page command reopens it'], ['Reset layout', 'Back to the default arrangement']])}
       <h2>About the data</h2><p class="muted">Prices are entered by hand and dated, not live. Views are personal and not investment advice.</p></div>`;
+  }
+
+  // ---------- projects ----------
+  // D.projects come from the vault's Projects notes (build_site.py reads them). A project's code
+  // is typed like a ticker; it opens an overview, and a write-up when its note names one.
+  const pHref = (p, sub = '') => esc(`#/p/${p.code}${sub}`);
+  function prjNav(p, on) {
+    const tab = (id, label, sub) => `<button class="tab${on === id ? ' on' : ''}" data-go="${pHref(p, sub)}">${label}</button>`;
+    return `<div class="secnav">${tab('ovr', 'OVR', '')}${p.writeup ? tab('writeup', 'WRITE-UP', '/writeup') : ''}</div>`;
+  }
+
+  // One row per project: the code, then the title with its blurb, status and date beneath.
+  // The Projects page and the About page share it. The row is the one tab stop, not the chip.
+  function projectRows() {
+    return `<table class="rows prj-rows">${projects.map((p) => `<tr data-go="${pHref(p)}" tabindex="0">
+      <td><button class="tkchip" data-go="${pHref(p)}" tabindex="-1">${esc(p.code)}</button></td>
+      <td><b>${esc(p.title)}</b>${p.blurb ? `<div class="d">${esc(p.blurb)}</div>` : ''}<div class="d s">${esc([p.status, p.when].filter(Boolean).join(' · '))}</div></td></tr>`).join('')}</table>`;
+  }
+  function viewProjects() {
+    return `<div class="page"><h1>Projects</h1>
+      <p class="lead">Research and builds beyond the stock calls.</p>
+      ${projectRows()}</div>`;
+  }
+
+  // The overview: header like a ticker page, then each section the note fills in, in reading order.
+  function viewProject(p) {
+    const meta = [p.stack, p.when].filter(Boolean).join(' · ');
+    const jump = (p.writeup ? [`<button class="btn" data-go="${pHref(p, '/writeup')}">WRITE-UP ›</button>`] : [])
+      .concat(p.links.map(([label, addr]) => `<a class="btn" href="${esc(web(addr))}" target="_blank" rel="noopener">${esc(label)} ↗</a>`));
+    const figs = p.figures.map(([label, value, detail]) =>
+      `<div class="stat"><b>${esc(value)}</b><span>${esc(label)}</span>${detail ? `<span class="d">${esc(detail)}</span>` : ''}</div>`).join('');
+    const steps = p.steps.map(([head, detail]) => `<li>${esc(head)}${detail ? `<div class="d">${esc(detail)}</div>` : ''}</li>`).join('');
+    const tried = p.log.map(([v, what, outcome]) => `<tr><td>${esc(v)}</td><td>${esc(what)}</td><td class="o">${esc(outcome)}</td></tr>`).join('');
+    return `<div class="page prj">
+      <div class="sec-id"><span class="tkbig">${esc(p.code)}</span><span class="badge closed">${esc(p.status.toUpperCase())}</span></div>
+      <div class="sec-name">${esc(p.title)}</div>
+      ${meta ? `<div class="muted">${esc(meta)}</div>` : ''}
+      ${jump.length ? `<div class="jump">${jump.join('')}</div>` : ''}
+      ${p.question ? `<h2>The question</h2><p class="lead">${esc(p.question)}</p>` : ''}
+      ${p.answer.length ? `<h2>${p.status === 'finished' ? 'Answer' : 'Answer so far'}</h2>${list(p.answer)}` : ''}
+      ${figs ? `<div class="statrow figs">${figs}</div>` : ''}
+      ${p.figuresNote ? `<p class="note figs-note">${esc(p.figuresNote)}</p>` : ''}
+      ${projChart(p)}
+      ${steps ? `<h2>How it works</h2><ol class="steps">${steps}</ol>` : ''}
+      ${p.honest.length ? `<h2>What keeps it honest</h2>${list(p.honest)}` : ''}
+      ${tried ? `<h2>What was tried</h2><table class="mini tried">${tried}</table>` : ''}
+    </div>`;
+  }
+
+  // The write-up is its own Obsidian note; build_site.py escapes it (thesis_note.py), so its html is used as it is.
+  function viewWriteup(p) {
+    const w = p.writeup;
+    const sub = [p.blurb ? esc(p.blurb) : '', w.updated ? `Updated ${fmtDate(w.updated)}` : ''].filter(Boolean).join(' · ');
+    return `<article class="reader f${state.font}">
+      <div class="reader-bar"><button data-act="copy">Copy link</button><span class="sp"></span>${fontButtons()}<button data-act="print">Export PDF</button></div>
+      <div class="meta">PROJECT · ${esc(p.code)} · ${esc(p.status.toUpperCase())}</div>
+      <h1>${esc(w.title || p.title)}</h1>
+      ${sub ? `<p class="muted">${sub}</p>` : ''}
+      <div class="md">${w.html}</div>
+    </article>`;
+  }
+
+  // ---------- project chart ----------
+  // Growth of $1: every line restarts at $1 on its own first value, on a log scale, so the same
+  // percentage move looks the same size in 2009 as in 2025. Drawn at the plot's pixel width, like
+  // the price chart. The first line is the project's own; the others are greys to compare against.
+  const PCOLS = ['#45a873', '#d6d6d6', '#8f8f8f', '#5f5f5f'];
+  const pDate = (d) => (d.length > 7 ? fmtDate(d) : `${MONTHS[+d.slice(5, 7) - 1]} ${d.slice(0, 4)}`);
+  const usd = (v) => {
+    if (v == null) return '—';
+    const dp = v < 10 ? 2 : v < 100 ? 1 : 0;
+    return '$' + v.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  };
+  const usdTick = (v) => '$' + v.toLocaleString('en-US', { maximumSignificantDigits: 3 });
+
+  function projChart(p) {
+    const ch = p.chart;
+    if (!ch || !ch.dates || ch.dates.length < 2) return '';
+    return `<div class="chartbox pchart" data-pchart="${esc(p.code)}">
+      <div class="chart-bar"><span class="readout"></span></div>
+      <div class="plot"></div>
+      <div class="note">${esc(ch.note || 'Growth of $1, rebased at the first date.')}</div>
+    </div>`;
+  }
+
+  // Log-scale labels at 1, 2 and 5 times a power of ten ($1, $2, $5, $10, $20). A wide range
+  // keeps only the decades, then every other decade, to stay within `most` labels; a narrow one
+  // adds 1.5, 3 and 7, and one too narrow even for that gets evenly spaced labels.
+  function logTicks(lo, hi, most) {
+    const at = (m, e) => (e < 0 ? m / 10 ** -e : m * 10 ** e); // keeps 0.3 from becoming 0.30000000000000004
+    const pick = (ms, every = 1) => {
+      const out = [];
+      for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++) {
+        if (e % every) continue;
+        ms.forEach((m) => { const v = at(m, e); if (v >= lo && v <= hi) out.push(v); });
+      }
+      return out;
+    };
+    const t = pick([1, 2, 5]);
+    if (t.length > most) return pick([1], Math.ceil(pick([1]).length / most));
+    if (t.length >= 3) return t;
+    const fine = pick([1, 1.5, 2, 3, 5, 7]);
+    if (fine.length >= 2 && fine.length <= most) return fine;
+    if (t.length >= 2) return t;
+    const step = niceStep(hi - lo, Math.min(most, 5)), out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) out.push(+v.toPrecision(12));
+    return out;
+  }
+
+  // Date labels along the bottom. A span of three years or more gets years, thinned to every 2, 5
+  // or 10 when they would crowd. A shorter one gets months: daily figures as on the price chart,
+  // monthly ones at evenly spaced points (each point is a month, so each label sits on its own).
+  function yearTicks(dates, x) {
+    const yr = (k) => +dates[k].slice(0, 4), starts = [];
+    dates.forEach((d, k) => { if (k ? yr(k) !== yr(k - 1) : d.slice(5, 7) === '01') starts.push(k); });
+    if (starts.length >= 3) {
+      const a = starts[0], b = starts[starts.length - 1], perYear = (x(b) - x(a)) / (yr(b) - yr(a));
+      const stride = [1, 2, 5, 10, 20].find((s) => perYear * s >= 44) || 50;
+      return starts.filter((k) => yr(k) % stride === 0).map((k) => ({ k, label: String(yr(k)) }));
+    }
+    if (dates[0].length > 7) return dateTicks(dates, x);
+    const n = dates.length, m = Math.min(4, n - 1);
+    return Array.from({ length: m + 1 }, (_, j) => {
+      const k = Math.round((j * (n - 1)) / m);
+      return { k, label: `${MONTHS[+dates[k].slice(5, 7) - 1]} '${dates[k].slice(2, 4)}` };
+    });
+  }
+
+  function drawPChart(box) {
+    const p = projBy[box.dataset.pchart], plot = $('.plot', box);
+    if (!p || !p.chart || !plot) return;
+    const dates = p.chart.dates, n = dates.length;
+    // A missing value, or one not above zero (a log scale has no room for it), leaves a gap in its line.
+    const lines = p.chart.series.map((name, j) => {
+      const raw = p.chart.values[j] || [], base = raw.find((v) => v != null && v > 0);
+      return { name, color: PCOLS[Math.min(j, PCOLS.length - 1)],
+        v: dates.map((_, k) => (base && raw[k] != null && raw[k] > 0 ? raw[k] / base : null)) };
+    });
+    const all = lines.flatMap((l) => l.v.filter((v) => v != null));
+    if (!all.length) { plot.innerHTML = ''; $('.readout', box).textContent = 'No figures to chart'; return; }
+    const W = Math.max(300, Math.round(plot.clientWidth)), H = W < 480 ? 220 : 280;
+    const L = 10, R = 52, T = 12, B = 24, xe = W - R, yb = H - B;
+    let lo = Math.log10(Math.min(...all)), hi = Math.log10(Math.max(...all));
+    const pad = Math.max((hi - lo) * 0.06, 0.02);
+    lo -= pad; hi += pad;
+    const x = (k) => L + (k / (n - 1)) * (xe - L);
+    const y = (v) => T + ((hi - Math.log10(v)) / (hi - lo)) * (yb - T);
+    const f = (v) => v.toFixed(1);
+
+    let grid = '';
+    logTicks(10 ** lo, 10 ** hi, Math.max(3, Math.floor((yb - T) / 30))).forEach((v) => {
+      const yy = y(v);
+      grid += `<line x1="${L}" x2="${xe + 4}" y1="${f(yy)}" y2="${f(yy)}" stroke="#1f1f1f"/>
+        <text x="${xe + 8}" y="${f(yy + 4)}" fill="#8f8f8f" font-size="11">${usdTick(v)}</text>`;
+    });
+    yearTicks(dates, x).forEach(({ k, label }) => {
+      const xx = x(k), anchor = xx < L + 16 ? 'start' : xx > xe - 16 ? 'end' : 'middle';
+      grid += `<line x1="${f(xx)}" x2="${f(xx)}" y1="${T}" y2="${yb + 4}" stroke="#1f1f1f"/>
+        <text x="${f(xx)}" y="${yb + 16}" fill="#8f8f8f" font-size="11" text-anchor="${anchor}">${esc(label)}</text>`;
+    });
+    // Each line restarts after a gap. The project's own line is drawn last, so it sits on top.
+    const path = (l) => l.v.map((v, k) => (v == null ? '' : `${k && l.v[k - 1] != null ? 'L' : 'M'}${f(x(k))},${f(y(v))}`)).join('');
+    const drawn = lines.map((l, j) => `<path d="${path(l)}" fill="none" stroke="${l.color}" stroke-width="${j ? 1.2 : 1.5}" stroke-linejoin="round"/>`).reverse().join('');
+    plot.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Growth of $1: ${esc(p.chart.series.join(', '))}">
+      ${grid}${drawn}
+      <line x1="${L}" x2="${xe}" y1="${yb}" y2="${yb}" stroke="#474747"/>
+      <line x1="${xe}" x2="${xe}" y1="${T}" y2="${yb}" stroke="#474747"/>
+      <g class="xh" visibility="hidden" pointer-events="none">
+        <g class="xh-x"><line y1="${T}" y2="${yb}" stroke="#8f8f8f" stroke-dasharray="2 2"/></g>
+        ${lines.map((l) => `<circle class="xh-dot" r="3" fill="#000" stroke="${l.color}" stroke-width="1.5"/>`).join('')}
+        <g class="xh-d"><rect x="-38" y="${yb + 4}" width="76" height="16" fill="#474747"/>
+          <text class="xh-date" y="${yb + 16}" fill="#fff" font-size="11" text-anchor="middle"></text></g>
+      </g></svg>`;
+    box._m = { lines, dates, n, W, L, xe, x, y };
+    pChartReadout(box, n - 1);
+    if (!box._wired) {
+      box._wired = true;
+      plot.addEventListener('pointermove', (e) => pChartHover(box, e));
+      plot.addEventListener('pointerleave', () => {
+        const xh = $('.xh', box);
+        if (xh) xh.setAttribute('visibility', 'hidden');
+        if (box._m) pChartReadout(box, box._m.n - 1);
+      });
+    }
+  }
+
+  // The line above the plot, which doubles as the legend: the date, then each line's value on it.
+  function pChartReadout(box, k) {
+    const m = box._m;
+    $('.readout', box).innerHTML = `<b>${esc(pDate(m.dates[k]))}</b>` + m.lines.map((l) =>
+      ` · <span class="ser"><i class="sw" style="background:${l.color}"></i>${esc(l.name)} <b>${usd(l.v[k])}</b></span>`).join('');
+  }
+
+  // Crosshair: snaps to the nearest date, with a dot on every line that has a value there.
+  function pChartHover(box, e) {
+    const m = box._m, svg = $('svg', box);
+    if (!m || !svg) return;
+    const rc = svg.getBoundingClientRect(), sx = (e.clientX - rc.left) * (m.W / rc.width);
+    const k = Math.max(0, Math.min(m.n - 1, Math.round(((sx - m.L) / (m.xe - m.L)) * (m.n - 1))));
+    const X = m.x(k).toFixed(1);
+    $('.xh', svg).setAttribute('visibility', 'visible');
+    $('.xh-x', svg).setAttribute('transform', `translate(${X},0)`);
+    svg.querySelectorAll('.xh-dot').forEach((dot, j) => {
+      const v = m.lines[j].v[k];
+      // 'inherit', not 'visible': a visible child would still show once the group is hidden again.
+      dot.setAttribute('visibility', v == null ? 'hidden' : 'inherit');
+      if (v != null) dot.setAttribute('transform', `translate(${X},${m.y(v).toFixed(1)})`);
+    });
+    $('.xh-d', svg).setAttribute('transform', `translate(${Math.max(m.L + 38, Math.min(m.xe - 38, +X))},0)`);
+    $('.xh-date', svg).textContent = pDate(m.dates[k]);
+    pChartReadout(box, k);
   }
 
   // ---------- panels, screens, routing ----------
@@ -1033,7 +1253,13 @@
         if (c === 'n') { state.wire.ticker = i.ticker; renderWire(); return focusPanel('p-wire'); }
       }
     } else if (a === 'n' && postBy[b]) setMain('UPDATE', postBy[b].tickers.join(' '), viewPost(postBy[b]));
-    else if (a === 'help') setMain('HELP', '', viewHelp());
+    else if (a === 'p' && projects.length) {
+      // An unknown code falls back to the list; a project without a write-up shows its overview.
+      const p = projBy[(b || '').toUpperCase()];
+      if (p && c === 'writeup' && p.writeup) setMain('WRITE-UP', p.code, prjNav(p, 'writeup') + viewWriteup(p));
+      else if (p) setMain('PROJECT', p.code, prjNav(p, 'ovr') + viewProject(p));
+      else setMain('PROJECTS', '', viewProjects());
+    } else if (a === 'help') setMain('HELP', '', viewHelp());
     else if (a === 'cp') setMain('CHECKPOINTS', '', viewCheckpoints());
     else setMain('ABOUT', '', viewAbout());
     focusPanel('p-main');
@@ -1050,6 +1276,8 @@
   ];
   // Offered once a ticker note has a Checkpoints section.
   if (anyCheckpoints) GLOBAL.splice(3, 0, { code: 'CP', desc: 'Checkpoints: what each call needs next, soonest first', run: () => go('#/cp') });
+  // Offered once there is a project. Goes in straight after N.
+  if (projects.length) GLOBAL.splice(3, 0, { code: 'PRJ', desc: 'Projects: research and builds beyond the stock calls', run: () => go('#/p') });
   const TICKER = [
     { code: 'DES', desc: 'Overview: my call, thesis in brief, checkpoints, chart and catalysts', sub: '' },
     { code: 'THESIS', desc: 'The full written thesis', sub: '/thesis' },
@@ -1087,6 +1315,11 @@
           run: () => go(`#/s/${i.ticker}`),
         });
       });
+      projects.filter((p) => !q || p.code.startsWith(q) || p.title.toUpperCase().includes(q) || (p.blurb || '').toUpperCase().includes(q)).forEach((p) => items.push({
+        group: 'PROJECTS',
+        html: `<span class="chip tk">${esc(p.code)}</span><span class="desc">${esc(p.title)} <span class="muted">· ${esc(p.status)}</span></span>`,
+        run: () => go(`#/p/${p.code}`),
+      }));
       if (q.length >= 2) {
         posts.filter((p) => p.headline.toUpperCase().includes(q)).slice(0, 5).forEach((p) => items.push({
           group: 'UPDATES',
@@ -1096,7 +1329,8 @@
       }
     }
     // An exact command or ticker beats everything else when Enter is pressed.
-    items.sort((a, b) => (a.group === b.group ? 0 : ['COMMANDS', 'IDEAS', 'UPDATES'].indexOf(a.group) - ['COMMANDS', 'IDEAS', 'UPDATES'].indexOf(b.group)));
+    const order = ['COMMANDS', 'IDEAS', 'PROJECTS', 'UPDATES'];
+    items.sort((a, b) => (a.group === b.group ? 0 : order.indexOf(a.group) - order.indexOf(b.group)));
     return items;
   }
   function renderPal() {
@@ -1114,9 +1348,9 @@
   }
   function openPal() {
     state.pal.items = buildResults(input.value);
-    // Prefer an idea whose ticker was typed exactly over a command that merely matches.
+    // Prefer an idea or project whose ticker or code was typed exactly over a command that merely matches.
     const q = input.value.trim().toUpperCase();
-    const exact = q ? state.pal.items.findIndex((it) => it.group === 'IDEAS' && it.html.includes(`>${q}<`)) : -1;
+    const exact = q ? state.pal.items.findIndex((it) => (it.group === 'IDEAS' || it.group === 'PROJECTS') && it.html.includes(`>${q}<`)) : -1;
     const cmdExact = GLOBAL.some((c) => c.code === q) || TICKER.some((c) => c.code === q);
     state.pal.idx = exact >= 0 && !cmdExact ? exact : 0;
     renderPal();

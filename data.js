@@ -1470,5 +1470,138 @@ window.SITE = {
       "headline": "ABVX: INITIATING LONG AT $70.00, TARGET $220.00"
     }
   ],
-  "projects": []
+  "projects": [
+    {
+      "code": "13F",
+      "title": "Biotech specialist 13F research",
+      "status": "ongoing",
+      "blurb": "Testing whether biotech specialist funds' public 13F filings can beat XBI after costs",
+      "stack": "Python, DuckDB, SEC EDGAR, CRSP",
+      "when": "2026",
+      "question": "Can a portfolio that only buys stocks, built only from biotech specialist funds' 13F filings (the quarterly list of US stock holdings that large investment managers must publish), beat XBI, a biotech exchange-traded fund, after trading costs? The filings arrive weeks after the quarter ends, so the test is whether they still carry information once they are public.",
+      "answer": [
+        "On 2008–2025 the main rule (V7) returned 18.5% a year after costs against 11.0% for XBI, but the rule was chosen after those years had been seen, so this is not independent evidence.",
+        "Most of the lead over XBI came from a minority of holdings and a few large price jumps, several around trial results or takeovers, so the past record is uneven.",
+        "Its worst fall was 60.0%, against 63.9% for XBI; tighter position caps cut risk but also cut risk-adjusted returns, and an XBI short hedge that helped on past data is on hold until it can be tested on new data.",
+        "The first real test is data from after 2025, which no version of the rule has seen."
+      ],
+      "figures": [
+        [
+          "Strategy, a year",
+          "18.5%",
+          "2008–2025, after costs"
+        ],
+        [
+          "XBI, a year",
+          "11.0%",
+          "same days, fully invested"
+        ],
+        [
+          "Stress case, a year",
+          "16.8%",
+          "missing prices counted as total losses"
+        ],
+        [
+          "Sharpe ratio",
+          "0.73",
+          "XBI 0.49"
+        ],
+        [
+          "Worst fall",
+          "-60.0%",
+          "XBI -63.9%"
+        ],
+        [
+          "Beta to XBI",
+          "0.82",
+          "down-market capture 0.79"
+        ]
+      ],
+      "figuresNote": "2 Jan 2008 to 31 Dec 2025, 4,529 trading days. Apart from the stress case, missing prices are carried at their last value. The rule was chosen on these same years, so this is not independent evidence.",
+      "steps": [
+        [
+          "Read filings",
+          "Each fund's 13F, dated by when the SEC accepted it"
+        ],
+        [
+          "Take top 40%",
+          "Its largest holdings until they make up 40% of the fund"
+        ],
+        [
+          "Count votes",
+          "One vote per fund per stock, lasting 252 trading days"
+        ],
+        [
+          "Screen",
+          "Price at least $5, market value $100M, $1M traded daily"
+        ],
+        [
+          "Hold top 20",
+          "Weighted by share of votes, at most 10% each"
+        ]
+      ],
+      "honest": [
+        "A filing counts only from the moment the SEC accepted it, and trades happen at the next trading day's close.",
+        "Every trade pays 0.5% in costs, and the benchmark is XBI held fully invested.",
+        "Takeovers and delistings stay in the data, and the list of biotech stocks is set as it stood at each date, not from today's list.",
+        "Every version is kept, including the failures, and V7 is now frozen: it will not be retuned on 2008–2025.",
+        "Missing prices are never filled in quietly: the strict method stops at the first gap, and the gap is reported."
+      ],
+      "log": [
+        [
+          "V1–V6",
+          "Fund votes on new buys, then on largest holdings",
+          "New buys lagged XBI; 40% cutoff scored best"
+        ],
+        [
+          "V7",
+          "Each fund's holdings up to 40%; hold top 20",
+          "18.5% a year vs XBI 11.0%, in hindsight"
+        ],
+        [
+          "V8",
+          "Tighter limits on how large one stock can grow",
+          "Less risk, lower Sharpe; not adopted"
+        ],
+        [
+          "V9",
+          "Temporary ban after a fund fully sells a top holding",
+          "Lower Sharpe, same worst fall; not adopted"
+        ],
+        [
+          "V10",
+          "Short XBI against the portfolio",
+          "Worst fall -33.8%; awaits post-2025 data"
+        ],
+        [
+          "V11",
+          "80% V7, 20% fresh buys backed by 2–5 funds",
+          "None beat V7's return or information ratio"
+        ],
+        [
+          "V12",
+          "New stake over 3% of a fund, backed by another",
+          "13.8% a year, below V7; rejected"
+        ],
+        [
+          "V13",
+          "Each fund's top picks tested against XBI separately",
+          "Picks about 1% above XBI; one fund significant"
+        ],
+        [
+          "V14",
+          "Follow only up to 25 funds ranked on past picks",
+          "2011–2025: 14.9% vs 20.7% for all funds"
+        ]
+      ],
+      "links": [],
+      "chart": null,
+      "writeup": {
+        "name": "13F write-up",
+        "title": "Biotech specialist 13F research",
+        "html": "<h2>The question</h2><p>Every quarter, large US investment managers must publish a 13F filing: the list of their US stock holdings at the end of the quarter. It can arrive up to 45 days later, so its information is already weeks old.</p><p>This project asks whether biotech specialist funds' filings still say something useful once they are public. Can a portfolio that only buys stocks, built from those filings alone, beat XBI (an exchange-traded fund of US biotech stocks) after trading costs?</p><h2>Data</h2><ul><li><strong>Filings.</strong> 1,884 filings from 44 investment managers, filed between May 1999 and August 2026 on EDGAR, the SEC's public filing system. The machine-readable ones alone hold 91,335 holding lines. Of 282 older text filings, 51 that could not be read reliably were set aside, not guessed at.</li><li><strong>Managers.</strong> The list of 44 was drawn up with hindsight. An evidence review accepts 36 of them as biotech or healthcare specialists; the main rule uses all 44.</li><li><strong>Prices.</strong> Daily total returns to 31 December 2025 from CRSP (the Center for Research in Security Prices), a licensed database. Companies that were taken over or delisted stay in.</li><li><strong>Timing.</strong> Holdings are matched to stocks, and companies are classed as biotech, using the records valid at the time. A corrected filing counts only from when it was published.</li></ul><h2>The rule (V7)</h2><ol><li>Rank all the stock positions in each fund's latest 13F by size. Options are left out.</li><li>Take positions from the top until they reach 40% of the portfolio, including the one that crosses the line.</li><li>Each of those stocks gets one vote from that fund, lasting 252 trading days (about a year). A new filing replaces the fund's earlier picks, and related funds count once.</li><li>Buy only stocks on the dated biotech list that, at the previous close, cost at least $5, are worth at least $100M and trade at least $1M a day (20-day average).</li><li>Hold the 20 stocks with the most votes, weighted by their share of the votes and capped at 10%. Weight cut by the cap stays in cash.</li></ol><p>A filing counts from the moment the SEC accepted it, not from the quarter-end it describes. Trades happen at the close of the first trading day after the filing date, and each trade costs 0.5% of its value.</p><p><strong>How V7 was reached.</strong> The first rule (hold a stock while at least two independent funds have newly bought it within the last 60 trading days) was mostly in cash, about 15% invested on average, and returned 4.2% a year. V1 and V2 ranked stocks by votes on new buys and did not beat XBI. V3 and V4 voted on funds' largest holdings and beat XBI in time-ordered tests, but only under the carry and stress valuations below. V6 tried cutoffs from 20% to 50%. The 40% cutoff was picked in seven of eight test windows and fixed on 3 September 2026, after those results were seen.</p><h2>Results</h2><p>The back-test runs from 2 January 2008 to 31 December 2025 (4,529 trading days), after costs.</p><p>When a held stock has no price for a day, <strong>strict</strong> valuation stops, <strong>stress</strong> counts the stock as a total loss, and <strong>carry</strong> keeps its last value. Strict stops on 16 September 2009, when one held stock has no recorded return, so no strict figures exist for the full period. Both are sensitivity checks, not final answers.</p><div class=\"tbl\"><table><thead><tr><th>Measure</th><th class=\"r\">V7 rule</th><th class=\"r\">XBI</th></tr></thead><tbody><tr><td>Annual return (carry)</td><td class=\"r\">18.5%</td><td class=\"r\">11.0%</td></tr><tr><td>Annual return (stress)</td><td class=\"r\">16.8%</td><td class=\"r\">11.0%</td></tr><tr><td>Volatility</td><td class=\"r\">29.3%</td><td class=\"r\">31.6%</td></tr><tr><td>Sharpe ratio</td><td class=\"r\">0.73</td><td class=\"r\">0.49</td></tr><tr><td>Worst fall from a peak</td><td class=\"r\">-60.0%</td><td class=\"r\">-63.9%</td></tr><tr><td>Beta to XBI</td><td class=\"r\">0.82</td><td class=\"r\">1.00</td></tr><tr><td>Down-market capture</td><td class=\"r\">0.79</td><td class=\"r\">1.00</td></tr><tr><td>Information ratio against XBI</td><td class=\"r\">0.40</td><td class=\"r\"></td></tr><tr><td>Average share invested</td><td class=\"r\">96.5%</td><td class=\"r\">100%</td></tr></tbody></table></div><p>Sharpe ratio: annual return divided by volatility, with no deduction for interest on cash. Beta: how much the portfolio moves with XBI. Down-market capture: the share of XBI's falls it took on. Information ratio: average lead over XBI divided by how much that lead varied.</p><p>The rule was chosen after these years had been seen, so this is not independent evidence that it works.</p><p><strong>The two-window check.</strong> The first rule (not V7) was also re-run over two separate windows. The windows were set after the results were known, so this checks stability over time, not independent confirmation. The comparison is the US market, not XBI.</p><div class=\"tbl\"><table><thead><tr><th>First rule</th><th class=\"r\">2015–2018</th><th class=\"r\">2022–2025</th></tr></thead><tbody><tr><td>Annual return</td><td class=\"r\">4.6%</td><td class=\"r\">12.5%</td></tr><tr><td>Total return</td><td class=\"r\">19.5%</td><td class=\"r\">59.8%</td></tr><tr><td>US market, same amount invested, total return</td><td class=\"r\">3.7%</td><td class=\"r\">30.8%</td></tr><tr><td>Average share invested</td><td class=\"r\">7.8%</td><td class=\"r\">40.4%</td></tr><tr><td>Worst fall</td><td class=\"r\">-7.1%</td><td class=\"r\">-33.9%</td></tr></tbody></table></div><h2>Where the edge came from</h2><p>A study of the V7 carry results, dated 8 September 2026, found:</p><ul><li>The lead over XBI came mostly from the stocks held, not from cash. Trading costs took about 2.3% a year; the portfolio traded about 4.5 times its value yearly.</li><li>Only 114 of the 259 stocks held (44%) added value after their own costs. The top five supplied 64.8% of the lead (in log terms) and the top ten 104.4%, as losses elsewhere offset gains.</li><li>The 20 best days for single holdings equal 86% of the lead. Intercept rose 281% on 9 January 2014, when its liver-disease trial met its main goal and was stopped early. Pharmasset rose 85% on 21 November 2011, when Gilead agreed to buy it.</li><li>V7 beat XBI in 12 of 18 calendar years. It lost 31.0% in 2021, when XBI lost 20.5%, but only 6.1% in 2022, when XBI lost 25.9%.</li></ul><p>The study reads this as exposure to a few large biotech outcomes, not a steady stock-picking edge, and it cannot show that the filings caused the result.</p><h2>What didn't work</h2><p>Each later version started from V7 and changed one thing. Figures are carry results on 2008–2025 unless stated, all judged with those years already seen.</p><div class=\"tbl\"><table><thead><tr><th>Version</th><th>Idea</th><th>Result</th><th>Decision</th></tr></thead><tbody><tr><td>V8</td><td>Tighter caps: a 7.5% or 5% target with a hard limit</td><td>Smaller worst falls (-58.1%, -52.5%), but Sharpe fell to 0.71 and 0.70</td><td>Kept V7</td></tr><tr><td>V9</td><td>Block a stock for 20, 60 or 120 days after a fund sells all of a top holding</td><td>Lower Sharpe each time; worst fall unchanged</td><td>Not adopted</td></tr><tr><td>V10</td><td>Sell XBI short against the portfolio</td><td>Highest-Sharpe version: 12.9% a year, Sharpe 0.79, worst fall -33.8%, with assumed hedge costs</td><td>On hold until strict figures and new data</td></tr><tr><td>V11</td><td>80% in V7, 20% in fresh buys backed by 2 to 5 funds</td><td>Best 17.5% a year; none beat V7's return or information ratio</td><td>Not adopted</td></tr><tr><td>V12</td><td>20% in new stakes above 3% of one fund, confirmed by another</td><td>13.8% a year, Sharpe 0.64</td><td>Rejected</td></tr><tr><td>V13</td><td>Each fund's top picks against XBI, with no portfolio</td><td>Picks 0.9% to 1.1% ahead of XBI on average over 20 to 252 trading days; one of 140 fund-and-horizon tests passed the Holm correction</td><td>A clue, not a rule</td></tr><tr><td>V14</td><td>Follow only up to 25 funds, ranked yearly on past picks</td><td>2011–2025: 14.9% a year against 20.7% for all funds (XBI 12.7%)</td><td>Not adopted</td></tr></tbody></table></div><p>The Holm correction raises the bar when many tests are run at once, so fewer pass by luck.</p><h2>Limits</h2><ul><li><strong>Hindsight.</strong> The 40% cutoff, the fund list and every version used 2008–2025. Testing in time order stops a rule seeing the future, but it cannot make results already seen independent.</li><li><strong>Strict valuation is blocked,</strong> so every full-period figure is a sensitivity check.</li><li><strong>Late, long-only filings.</strong> 13Fs arrive up to 45 days after the quarter and leave out short sales, so a fund that hedged a holding still looks like a buyer.</li><li><strong>Concentration.</strong> The worst fall was 60%. The 10% cap applies only at rebalancing, so one holding grew to 28.2%.</li><li><strong>Licensed data.</strong> The CRSP licence does not allow the raw data to be shared, so this page reports results only.</li></ul><h2>What's next</h2><ul><li><strong>A real test.</strong> V7 is frozen and will not be retuned on 2008–2025. Its first independent test is the first CRSP release with returns after 31 December 2025.</li><li><strong>The 2009 gap.</strong> Trace the missing return at its source, so strict figures can exist.</li><li><strong>Sizing by stock-specific risk.</strong> The next permitted experiment sizes holdings by residual volatility (how much a stock moves apart from XBI), using only earlier data, a few choices declared in advance and no other change at once.</li><li><strong>An event map.</strong> Match V7's large gains and losses, and ordinary days, to dated events such as trial results, takeovers and share sales.</li></ul>",
+        "updated": "2026-11-19"
+      }
+    }
+  ]
 };
