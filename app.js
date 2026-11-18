@@ -47,7 +47,7 @@
   const qmTarget = (i) => (i.position ? null : i.target);
   const qmUpside = (i) => (i.position ? null : calc(i).upside);
   // A leg of an options position that has been closed or has expired gets a row of its own in
-  // the monitor's Closed tab while the position as a whole is still open. These rows are not
+  // the monitor's Closed legs tab while the position as a whole is still open. These rows are not
   // ideas: they stay out of D.ideas, so the track record does not count the same profit twice.
   // A leg is part of its position, not a trade of its own, so its Return is what it added to the
   // position's return (its profit over the position's cost base, as a percentage like every
@@ -77,7 +77,12 @@
     { id: 'Active', f: (i) => i.status === 'active' },
     { id: 'Biotech', f: (i) => i.sector === 'Biotech' && i.status !== 'closed' },
     { id: 'Watchlist', f: (i) => i.status === 'watch' },
-    { id: 'Closed', f: (i) => i.status === 'closed' },
+    // Finished calls only, so its count matches "closed calls" in the track record.
+    { id: 'Closed', closed: true, f: (i) => i.status === 'closed' && !i.leg },
+    // Legs closed out of a position that is still open are not calls of their own, so they get a
+    // tab of their own, shown only while there are any.
+    ...(closedLegs.length ? [{ id: 'Closed legs', closed: true, f: (i) => !!i.leg,
+      tip: 'Parts of a position that is still open, closed or expired. They are not finished calls, so the track record does not count them.' }] : []),
   ];
   const qmCols = (closed) => [
     { k: 'ticker', label: 'Ticker', left: true, get: (i) => i.ticker },
@@ -93,11 +98,12 @@
   ];
 
   function renderQM() {
-    const closed = state.tab === 'Closed';
+    const tab = QM_TABS.find((t) => t.id === state.tab) || QM_TABS[0];
+    const closed = !!tab.closed;
     const cols = qmCols(closed);
     const col = cols.find((c) => c.k === state.sort.k) || cols[0];
     const q = state.qmQ.trim().toUpperCase();
-    const rows = qmPool.filter(QM_TABS.find((t) => t.id === state.tab).f)
+    const rows = qmPool.filter(tab.f)
       .filter((i) => !q || i.ticker.includes(q) || i.name.toUpperCase().includes(q))
       .sort((a, b) => {
         const x = col.get(a), y = col.get(b);
@@ -106,7 +112,7 @@
         return (x > y ? 1 : x < y ? -1 : 0) * state.sort.dir;
       });
     $('#qmTabs').innerHTML = QM_TABS.map((t) =>
-      `<button class="tab${t.id === state.tab ? ' on' : ''}" data-qmtab="${t.id}">${t.id}<span class="n">${qmPool.filter(t.f).length}</span></button>`).join('');
+      `<button class="tab${t.id === tab.id ? ' on' : ''}" data-qmtab="${t.id}"${t.tip ? ` title="${t.tip}"` : ''}>${t.id}<span class="n">${qmPool.filter(t.f).length}</span></button>`).join('');
     // The c-<key> classes let style.css drop the less important columns as the window narrows.
     const head = cols.map((c) =>
       `<th class="c-${c.k}${c.left ? ' l' : ''}" data-sort="${c.k}">${c.label}${state.sort.k === c.k ? `<i class="car${state.sort.dir > 0 ? '' : ' dn'}"></i>` : ''}</th>`).join('');
