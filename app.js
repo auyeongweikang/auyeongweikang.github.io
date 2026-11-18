@@ -8,7 +8,7 @@
   const postBy = Object.fromEntries(posts.map((p) => [p.id, p]));
   // Research and builds beyond the stock calls. A site with none shows no trace of them.
   const projects = D.projects || [];
-  const projBy = Object.fromEntries(projects.map((p) => [p.code, p]));
+  const projBy = Object.fromEntries(projects.map((p) => [String(p.n), p]));
 
   const state = {
     tab: 'Active',
@@ -805,7 +805,7 @@
     return `<div class="page"><h1>Help</h1>
       <p class="lead">Everything here works by clicking. The command bar is the faster way round.</p>
       <h2>Commands</h2><table class="grid" style="white-space:normal"><tbody>${g}</tbody></table>
-      ${projects.length ? `<p class="muted" style="margin-top:8px">Type a project’s code, for example <b>${esc(projects[0].code)}</b>, to open it.</p>` : ''}
+      ${projects.length ? `<p class="muted" style="margin-top:8px">Type PRJ and a project’s number, for example <b>PRJ ${projects[0].n}</b>, to open it.</p>` : ''}
       <h2>Ticker commands</h2><p class="muted">Type a ticker, then a command. For example <b>HLXB MODEL</b>.</p>
       <table class="grid" style="white-space:normal"><tbody>${t}</tbody></table>
       <h2>Keys</h2>${kv([['` or /', 'Focus the command bar'], ['↑ ↓', 'Move through results'], ['Enter', 'Run the highlighted result'], ['Esc', 'Close the results'], ['Backspace on empty bar', 'Clear the loaded ticker']])}
@@ -814,19 +814,20 @@
   }
 
   // ---------- projects ----------
-  // D.projects come from the vault's Projects notes (build_site.py reads them). A project's code
-  // is typed like a ticker; it opens an overview, and a write-up when its note names one.
-  const pHref = (p, sub = '') => esc(`#/p/${p.code}${sub}`);
+  // D.projects come from the vault's Projects notes (build_site.py reads them). Each has a number:
+  // PRJ 1 opens project 1's overview, and its write-up when its note names one.
+  const pHref = (p, sub = '') => `#/p/${p.n}${sub}`;
+  const pName = (p) => `PRJ ${p.n}`;
   function prjNav(p, on) {
     const tab = (id, label, sub) => `<button class="tab${on === id ? ' on' : ''}" data-go="${pHref(p, sub)}">${label}</button>`;
     return `<div class="secnav">${tab('ovr', 'OVR', '')}${p.writeup ? tab('writeup', 'WRITE-UP', '/writeup') : ''}</div>`;
   }
 
-  // One row per project: the code, then the title with its blurb, status and date beneath.
+  // One row per project: PRJ and its number, then the title with its blurb, status and date beneath.
   // The Projects page and the About page share it. The row is the one tab stop, not the chip.
   function projectRows() {
     return `<table class="rows prj-rows">${projects.map((p) => `<tr data-go="${pHref(p)}" tabindex="0">
-      <td><button class="tkchip" data-go="${pHref(p)}" tabindex="-1">${esc(p.code)}</button></td>
+      <td><button class="tkchip" data-go="${pHref(p)}" tabindex="-1">${pName(p)}</button></td>
       <td><b>${esc(p.title)}</b>${p.blurb ? `<div class="d">${esc(p.blurb)}</div>` : ''}<div class="d s">${esc([p.status, p.when].filter(Boolean).join(' · '))}</div></td></tr>`).join('')}</table>`;
   }
   function viewProjects() {
@@ -845,7 +846,7 @@
     const steps = p.steps.map(([head, detail]) => `<li>${esc(head)}${detail ? `<div class="d">${esc(detail)}</div>` : ''}</li>`).join('');
     const tried = p.log.map(([v, what, outcome]) => `<tr><td>${esc(v)}</td><td>${esc(what)}</td><td class="o">${esc(outcome)}</td></tr>`).join('');
     return `<div class="page prj">
-      <div class="sec-id"><span class="tkbig">${esc(p.code)}</span><span class="badge closed">${esc(p.status.toUpperCase())}</span></div>
+      <div class="sec-id"><span class="tkbig">${pName(p)}</span><span class="badge closed">${esc(p.status.toUpperCase())}</span></div>
       <div class="sec-name">${esc(p.title)}</div>
       ${meta ? `<div class="muted">${esc(meta)}</div>` : ''}
       ${jump.length ? `<div class="jump">${jump.join('')}</div>` : ''}
@@ -866,7 +867,7 @@
     const sub = [p.blurb ? esc(p.blurb) : '', w.updated ? `Updated ${fmtDate(w.updated)}` : ''].filter(Boolean).join(' · ');
     return `<article class="reader f${state.font}">
       <div class="reader-bar"><button data-act="copy">Copy link</button><span class="sp"></span>${fontButtons()}<button data-act="print">Export PDF</button></div>
-      <div class="meta">PROJECT · ${esc(p.code)} · ${esc(p.status.toUpperCase())}</div>
+      <div class="meta">${pName(p)} · ${esc(p.status.toUpperCase())}</div>
       <h1>${esc(w.title || p.title)}</h1>
       ${sub ? `<p class="muted">${sub}</p>` : ''}
       <div class="md">${w.html}</div>
@@ -889,7 +890,7 @@
   function projChart(p) {
     const ch = p.chart;
     if (!ch || !ch.dates || ch.dates.length < 2) return '';
-    return `<div class="chartbox pchart" data-pchart="${esc(p.code)}">
+    return `<div class="chartbox pchart" data-pchart="${p.n}">
       <div class="chart-bar"><span class="readout"></span></div>
       <div class="plot"></div>
       <div class="note">${esc(ch.note || 'Growth of $1, rebased at the first date.')}</div>
@@ -1254,10 +1255,10 @@
       }
     } else if (a === 'n' && postBy[b]) setMain('UPDATE', postBy[b].tickers.join(' '), viewPost(postBy[b]));
     else if (a === 'p' && projects.length) {
-      // An unknown code falls back to the list; a project without a write-up shows its overview.
-      const p = projBy[(b || '').toUpperCase()];
-      if (p && c === 'writeup' && p.writeup) setMain('WRITE-UP', p.code, prjNav(p, 'writeup') + viewWriteup(p));
-      else if (p) setMain('PROJECT', p.code, prjNav(p, 'ovr') + viewProject(p));
+      // An unknown number falls back to the list; a project without a write-up shows its overview.
+      const p = projBy[b || ''];
+      if (p && c === 'writeup' && p.writeup) setMain('WRITE-UP', pName(p), prjNav(p, 'writeup') + viewWriteup(p));
+      else if (p) setMain('PROJECT', String(p.n), prjNav(p, 'ovr') + viewProject(p));
       else setMain('PROJECTS', '', viewProjects());
     } else if (a === 'help') setMain('HELP', '', viewHelp());
     else if (a === 'cp') setMain('CHECKPOINTS', '', viewCheckpoints());
@@ -1315,10 +1316,13 @@
           run: () => go(`#/s/${i.ticker}`),
         });
       });
-      projects.filter((p) => !q || p.code.startsWith(q) || p.title.toUpperCase().includes(q) || (p.blurb || '').toUpperCase().includes(q)).forEach((p) => items.push({
-        group: 'PROJECTS',
-        html: `<span class="chip tk">${esc(p.code)}</span><span class="desc">${esc(p.title)} <span class="muted">· ${esc(p.status)}</span></span>`,
-        run: () => go(`#/p/${p.code}`),
+      // "PRJ" lists every project under the command, and "PRJ 1" (or "PRJ1") narrows it to project 1.
+      // Words from a project's title or blurb find it too.
+      const pq = q.match(/^PRJ\s*(\d*)$/);
+      projects.filter((p) => !q || (pq ? String(p.n).startsWith(pq[1]) : p.title.toUpperCase().includes(q) || (p.blurb || '').toUpperCase().includes(q))).forEach((p) => items.push({
+        group: 'PROJECTS', prj: p.n,
+        html: `<span class="chip tk">${pName(p)}</span><span class="desc">${esc(p.title)} <span class="muted">· ${esc(p.status)}</span></span>`,
+        run: () => go(pHref(p)),
       }));
       if (q.length >= 2) {
         posts.filter((p) => p.headline.toUpperCase().includes(q)).slice(0, 5).forEach((p) => items.push({
@@ -1348,9 +1352,11 @@
   }
   function openPal() {
     state.pal.items = buildResults(input.value);
-    // Prefer an idea or project whose ticker or code was typed exactly over a command that merely matches.
-    const q = input.value.trim().toUpperCase();
-    const exact = q ? state.pal.items.findIndex((it) => (it.group === 'IDEAS' || it.group === 'PROJECTS') && it.html.includes(`>${q}<`)) : -1;
+    // Prefer an idea whose ticker was typed exactly, or the project whose number was typed
+    // after PRJ, over a command that merely matches.
+    const q = input.value.trim().toUpperCase(), pq = q.match(/^PRJ\s*(\d+)$/);
+    const exact = pq ? state.pal.items.findIndex((it) => it.prj === +pq[1])
+      : q ? state.pal.items.findIndex((it) => it.group === 'IDEAS' && it.html.includes(`>${q}<`)) : -1;
     const cmdExact = GLOBAL.some((c) => c.code === q) || TICKER.some((c) => c.code === q);
     state.pal.idx = exact >= 0 && !cmdExact ? exact : 0;
     renderPal();

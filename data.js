@@ -1472,7 +1472,7 @@ window.SITE = {
   ],
   "projects": [
     {
-      "code": "13F",
+      "n": 1,
       "title": "Biotech specialist 13F research",
       "status": "ongoing",
       "blurb": "Testing whether biotech specialist funds' public 13F filings can beat XBI after costs",
