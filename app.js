@@ -809,7 +809,7 @@
       <h2>Ticker commands</h2><p class="muted">Type a ticker, then a command. For example <b>HLXB MODEL</b>.</p>
       <table class="grid" style="white-space:normal"><tbody>${t}</tbody></table>
       <h2>Keys</h2>${kv([['` or /', 'Focus the command bar'], ['↑ ↓', 'Move through results'], ['Enter', 'Run the highlighted result'], ['Esc', 'Close the results'], ['Backspace on empty bar', 'Clear the loaded ticker']])}
-      <h2>Windows</h2>${kv([['Drag a title bar', 'Move the window'], ['Drag an edge or corner', 'Resize it; windows sharing that edge follow'], ['Alt + drag an edge', 'Resize one window on its own'], ['Double-click a title bar, or ⤢', 'Maximise or restore'], ['×', 'Close; QM, N, CONTACT or any page command reopens it'], ['Reset layout', 'Back to the default arrangement']])}
+      <h2>Windows</h2>${kv([['Drag a title bar', 'Move the window'], ['Drag an edge or corner', 'Resize that window only; it can overlap the others'], ['Click a window', 'Bring it to the front'], ['Double-click a title bar, or ⤢', 'Maximise or restore'], ['×', 'Close; QM, N, CONTACT or any page command reopens it'], ['Reset layout', 'Back to the default arrangement']])}
       <h2>About the data</h2><p class="muted">Prices are entered by hand and dated, not live. Views are personal and not investment advice.</p></div>`;
   }
 
@@ -1125,47 +1125,22 @@
     const snap = (v, lines) => { for (const l of lines) if (Math.abs(v - l) <= SNAP) return l; return v; };
     const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
 
-    // A resized edge acts as a divider: every window edge that is flush with it,
-    // on either side, moves with it, so no gap or overlap opens up between
-    // neighbours. Hold Alt to resize this window on its own.
-    const others = PANELS.filter((id) => id !== p.id && state.layout[id].open && !state.layout[id].max)
-      .map((id) => { const q = state.layout[id]; return { g: q, x: q.x * W, y: q.y * H, w: q.w * W, h: q.h * H }; });
-    const self = { g, ...s };
-    const divider = (pos, len, cross, crossLen, end, minLen, total, lines) => {
-      const line0 = end ? self[pos] + self[len] : self[pos];
-      const group = [{ r: self, end }];
-      if (!e.altKey) {
-        const flush = others.map((r) => (Math.abs(r[pos] + r[len] - line0) <= 2 ? { r, end: true }
-          : Math.abs(r[pos] - line0) <= 2 ? { r, end: false } : null)).filter(Boolean);
-        // Only windows that touch the group along the divider join it.
-        const touches = (a, b) => a[cross] <= b[cross] + b[crossLen] + 2 && b[cross] <= a[cross] + a[crossLen] + 2;
-        for (let grew = true; grew;) {
-          grew = false;
-          flush.forEach((c) => {
-            if (!group.includes(c) && group.some((m) => touches(m.r, c.r))) { group.push(c); grew = true; }
-          });
-        }
-        // With no window on the far side this is not a divider, so nothing else follows.
-        if (!group.some((m) => m.end !== end)) group.length = 1;
-      }
-      let lo = 0, hi = total;
-      group.forEach(({ r, end: isEnd }) => {
-        if (isEnd) lo = Math.max(lo, r[pos] + minLen); else hi = Math.min(hi, r[pos] + r[len] - minLen);
-      });
-      return (delta, next) => {
+    // Only this window changes size. Its neighbours stay where they are: an edge dragged
+    // over one overlaps it, and the window last clicked is drawn in front.
+    const edge = (pos, len, end, minLen, total, lines) => {
+      const line0 = end ? s[pos] + s[len] : s[pos];
+      const lo = end ? s[pos] + minLen : 0, hi = end ? total : s[pos] + s[len] - minLen;
+      return (delta, n) => {
         const line = clamp(snap(line0 + delta, lines), lo, hi);
-        group.forEach(({ r, end: isEnd }) => {
-          const n = next.get(r);
-          if (isEnd) n[len] = line - r[pos]; else { n[pos] = line; n[len] = r[pos] + r[len] - line; }
-        });
+        if (end) n[len] = line - s[pos]; else { n[pos] = line; n[len] = s[pos] + s[len] - line; }
       };
     };
     const moveX = mode === 'move' ? null
-      : mode.includes('e') ? divider('x', 'w', 'y', 'h', true, MIN_W, W, xs)
-      : mode.includes('w') ? divider('x', 'w', 'y', 'h', false, MIN_W, W, xs) : null;
+      : mode.includes('e') ? edge('x', 'w', true, MIN_W, W, xs)
+      : mode.includes('w') ? edge('x', 'w', false, MIN_W, W, xs) : null;
     const moveY = mode === 'move' ? null
-      : mode.includes('s') ? divider('y', 'h', 'x', 'w', true, MIN_H, H, ys)
-      : mode.includes('n') ? divider('y', 'h', 'x', 'w', false, MIN_H, H, ys) : null;
+      : mode.includes('s') ? edge('y', 'h', true, MIN_H, H, ys)
+      : mode.includes('n') ? edge('y', 'h', false, MIN_H, H, ys) : null;
 
     let moved = false;
     const move = (ev) => {
@@ -1181,10 +1156,10 @@
         y = clamp(t !== y ? t : b !== y + h ? b - h : y, 0, H - h);
         Object.assign(g, { x: x / W, y: y / H });
       } else {
-        const next = new Map([self, ...others].map((r) => [r, { x: r.x, y: r.y, w: r.w, h: r.h }]));
-        if (moveX) moveX(dx, next);
-        if (moveY) moveY(dy, next);
-        next.forEach((n, r) => Object.assign(r.g, { x: n.x / W, y: n.y / H, w: n.w / W, h: n.h / H }));
+        const n = { ...s };
+        if (moveX) moveX(dx, n);
+        if (moveY) moveY(dy, n);
+        Object.assign(g, { x: n.x / W, y: n.y / H, w: n.w / W, h: n.h / H });
       }
       applyLayout();
     };
