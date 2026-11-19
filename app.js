@@ -870,11 +870,11 @@
       <div class="meta">${pName(p)} · ${esc(p.status.toUpperCase())}</div>
       <h1>${esc(w.title || p.title)}</h1>
       ${sub ? `<p class="muted">${sub}</p>` : ''}
-      <div class="md">${w.html}</div>
+      <div class="md">${withCharts(p, w.html)}</div>
     </article>`;
   }
 
-  // ---------- project chart ----------
+  // ---------- project charts ----------
   // Growth of $1: every line restarts at $1 on its own first value, on a log scale, so the same
   // percentage move looks the same size in 2009 as in 2025. Drawn at the plot's pixel width, like
   // the price chart. The first line is the project's own; the others are greys to compare against.
@@ -895,16 +895,34 @@
   };
   const pPoint = (ch, k) => (ch.axis ? `${ch.axis} ${ch.dates[k]}` : pDate(ch.dates[k]));
 
-  function projChart(p) {
-    const ch = p.chart;
+  // A project shows every chart its note lists (p.charts, from build_site.py's read_chart). A chart
+  // file can also say how it is drawn: "accent" and "highlight" columns stand out and are named at
+  // their line ends while every other column becomes a thin grey line, "log" and "floor" set the
+  // scale, and form "ranked" turns it into sorted bars for one row at a time.
+  const pChartOf = (box) => {
+    const [n, k] = (box.dataset.pchart || '').split(':'), p = projBy[n];
+    return p && (p.charts || [])[+k || 0];
+  };
+
+  // The frame of one chart: its title, the readout line (plus a button per row on a ranked
+  // chart), an empty plot and the caption. drawPChart fills the plot once its width is known.
+  function chartFrame(p, k, heading) {
+    const ch = (p.charts || [])[k];
     if (!ch || !ch.dates || ch.dates.length < 2) return '';
+    const ranked = ch.form === 'ranked', styled = ranked || !!(ch.accent || ch.highlight);
     const note = ch.note || (ch.axis ? '' : 'Growth of $1, rebased at the first date.');
-    return `<div class="chartbox pchart" data-pchart="${p.n}">
-      <div class="chart-bar"><span class="readout"></span></div>
+    const rows = ranked ? `<span class="sp"></span><span class="rng"><span class="rng-l">${esc(ch.axis)}</span>${
+      ch.dates.map((d, j) => `<button data-prow="${j}">${esc(d)}</button>`).join('')}</span>` : '';
+    return `${ch.title ? `<${heading} class="pchart-t">${esc(ch.title)}</${heading}>` : ''}
+    <div class="chartbox pchart${styled ? ' styled' : ''}${ranked ? ' ranked' : ''}" data-pchart="${p.n}:${k}">
+      <div class="chart-bar"><span class="readout"></span>${rows}</div>
       <div class="plot"></div>
       ${note ? `<div class="note">${esc(note)}</div>` : ''}
     </div>`;
   }
+  const projChart = (p) => (p.charts || []).map((_, k) => chartFrame(p, k, 'h2')).join('');
+  // A write-up shows a chart where it embeds the chart's file (![[name.csv]]).
+  const withCharts = (p, html) => html.replace(/<div class="pchart-slot" data-k="(\d+)"><\/div>/g, (_, k) => chartFrame(p, +k, 'div'));
 
   // Log-scale labels at 1, 2 and 5 times a power of ten ($1, $2, $5, $10, $20). A wide range
   // keeps only the decades, then every other decade, to stay within `most` labels; a narrow one
@@ -950,73 +968,112 @@
   }
 
   function drawPChart(box) {
-    const p = projBy[box.dataset.pchart], plot = $('.plot', box);
-    if (!p || !p.chart || !plot) return;
-    const ch = p.chart, dates = ch.dates, n = dates.length, counted = !!ch.axis;
+    const ch = pChartOf(box), plot = $('.plot', box);
+    if (!ch || !plot) return;
+    if (ch.form === 'ranked') { drawRanked(box, ch); return; }
+    const dates = ch.dates, n = dates.length, counted = !!ch.axis, log = !counted || !!ch.log;
+    const acc = new Set(ch.accent || []), high = new Set(ch.highlight || []), dash = new Set(ch.dashed || []);
+    const styled = acc.size + high.size > 0;
+    const floor = counted && log && ch.floor > 0 ? ch.floor : 0;
     // Growth of $1: a missing value, or one not above zero (a log scale has no room for it), leaves
-    // a gap in its line. A counted chart keeps the figures as they are, on an ordinary scale.
+    // a gap in its line. A counted chart keeps the figures as they are.
     const lines = ch.series.map((name, j) => {
       const raw = ch.values[j] || [], base = raw.find((v) => v != null && v > 0);
-      return { name, color: PCOLS[Math.min(j, PCOLS.length - 1)],
-        v: dates.map((_, k) => (counted ? (raw[k] == null ? null : raw[k])
+      const role = !styled ? '' : acc.has(j) ? 'ac' : high.has(j) ? 'hi' : 'bg';
+      return { name, j, role, dash: dash.has(j),
+        color: styled ? { ac: 'var(--accent)', hi: 'var(--text)', bg: 'var(--dim)' }[role] : PCOLS[Math.min(j, PCOLS.length - 1)],
+        v: dates.map((_, k) => (counted ? (raw[k] == null || (log && raw[k] <= 0) ? null : raw[k])
           : base && raw[k] != null && raw[k] > 0 ? raw[k] / base : null)) };
     });
     const all = lines.flatMap((l) => l.v.filter((v) => v != null));
     if (!all.length) { plot.innerHTML = ''; $('.readout', box).textContent = 'No figures to chart'; return; }
-    const W = Math.max(300, Math.round(plot.clientWidth)), H = W < 480 ? 220 : 280;
-    const L = 10, R = counted ? 60 : 52, T = 12, B = 24, xe = W - R, yb = H - B;
+    const W = Math.max(300, Math.round(plot.clientWidth)), H = styled ? (W < 480 ? 260 : 340) : W < 480 ? 220 : 280;
+    // The lines that stand out are named where they end, in a gutter kept clear for the names.
+    const named = styled && W >= 560 ? lines.filter((l) => l.role !== 'bg') : [];
+    const labW = named.length ? Math.max(...named.map((l) => l.name.length)) * 6.7 + 12 : 0;
+    const L = 10, R = counted ? 60 : 52, T = 12, B = 24, xe = W - R, xl = xe - labW, yb = H - B;
     const most = Math.max(3, Math.floor((yb - T) / 30));
     let lo, hi, y, ticks, tick;
-    if (counted) {
+    if (log) {
+      // A floor is the lowest figure shown: a line below it runs off the bottom edge.
+      const shown = floor ? all.filter((v) => v >= floor) : all;
+      lo = Math.log10(floor || Math.min(...shown)); hi = Math.log10(Math.max(...shown, floor * 10));
+      const pad = Math.max((hi - lo) * 0.06, 0.02);
+      if (!floor) lo -= pad;
+      hi += pad;
+      ticks = logTicks(10 ** lo, 10 ** hi, most);
+      y = (v) => T + ((hi - Math.log10(v)) / (hi - lo)) * (yb - T);
+      tick = counted ? unitFmt(ch.unit, (v) => (v < 1 ? 1 : 0)) : usdTick;
+    } else {
       lo = Math.min(0, ...all); hi = Math.max(...all) * 1.06 || 1;
       const step = niceStep(hi - lo, Math.min(most, 6));
       ticks = [];
       for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) ticks.push(+v.toPrecision(12));
       y = (v) => T + ((hi - v) / (hi - lo)) * (yb - T);
       tick = unitFmt(ch.unit, () => (step < 1 ? 1 : 0));
-    } else {
-      lo = Math.log10(Math.min(...all)); hi = Math.log10(Math.max(...all));
-      const pad = Math.max((hi - lo) * 0.06, 0.02);
-      lo -= pad; hi += pad;
-      ticks = logTicks(10 ** lo, 10 ** hi, most);
-      y = (v) => T + ((hi - Math.log10(v)) / (hi - lo)) * (yb - T);
-      tick = usdTick;
     }
-    const x = (k) => L + (k / (n - 1)) * (xe - L);
+    const x = (k) => L + (k / (n - 1)) * (xl - L);
     const f = (v) => v.toFixed(1);
 
     let grid = '';
     ticks.forEach((v) => {
       const yy = y(v);
-      grid += `<line x1="${L}" x2="${xe + 4}" y1="${f(yy)}" y2="${f(yy)}" stroke="#1f1f1f"/>
-        <text x="${xe + 8}" y="${f(yy + 4)}" fill="#8f8f8f" font-size="11">${tick(v)}</text>`;
+      grid += `<line x1="${L}" x2="${xe + 4}" y1="${f(yy)}" y2="${f(yy)}" style="stroke:var(--grid)"/>
+        <text x="${xe + 8}" y="${f(yy + 4)}" style="fill:var(--muted)" font-size="11">${tick(v)}</text>`;
     });
-    // A counted chart labels every point when they fit, else about six of them.
+    // A counted chart labels every point when they fit, else about six of them. The first label
+    // also says what is counted ("Quarter 1"), when there is room before the next one.
+    const every = n <= 12 ? 1 : Math.ceil(n / 6);
+    const roomy = counted && x(every) - x(0) > (ch.axis.length + 3) * 6.7 + 14;
     const xTicks = counted
-      ? dates.map((d, k) => ({ k, label: d })).filter(({ k }) => k % Math.ceil(n / 6) === 0 || n <= 12)
+      ? dates.map((d, k) => ({ k, label: k === 0 && roomy ? `${ch.axis} ${d}` : d })).filter(({ k }) => k % every === 0)
       : yearTicks(dates, x);
     xTicks.forEach(({ k, label }) => {
       const xx = x(k), anchor = xx < L + 16 ? 'start' : xx > xe - 16 ? 'end' : 'middle';
-      grid += `<line x1="${f(xx)}" x2="${f(xx)}" y1="${T}" y2="${yb + 4}" stroke="#1f1f1f"/>
-        <text x="${f(xx)}" y="${yb + 16}" fill="#8f8f8f" font-size="11" text-anchor="${anchor}">${esc(label)}</text>`;
+      grid += `<line x1="${f(xx)}" x2="${f(xx)}" y1="${T}" y2="${yb + 4}" style="stroke:var(--grid)"/>
+        <text x="${f(xx)}" y="${yb + 16}" style="fill:var(--muted)" font-size="11" text-anchor="${anchor}">${esc(label)}</text>`;
     });
-    // Each line restarts after a gap. The project's own line is drawn last, so it sits on top.
+    // Each line restarts after a gap. Grey lines go underneath, the project's own on top.
     const path = (l) => l.v.map((v, k) => (v == null ? '' : `${k && l.v[k - 1] != null ? 'L' : 'M'}${f(x(k))},${f(y(v))}`)).join('');
-    // A counted chart has few points, so each one also gets a small dot (and a lone point still shows).
-    const dots = (l) => (counted ? l.v.map((v, k) => (v == null ? '' : `<circle cx="${f(x(k))}" cy="${f(y(v))}" r="2" fill="${l.color}"/>`)).join('') : '');
-    const drawn = lines.map((l, j) => `<path d="${path(l)}" fill="none" stroke="${l.color}" stroke-width="${j ? 1.2 : 1.5}" stroke-linejoin="round"/>${dots(l)}`).reverse().join('');
+    // A counted chart with few points also gets a small dot on each (so a lone point still shows).
+    const dots = (l) => (counted && n <= 12 && l.role !== 'bg'
+      ? l.v.map((v, k) => (v == null ? '' : `<circle cx="${f(x(k))}" cy="${f(y(v))}" r="2" style="fill:${l.color}"/>`)).join('') : '');
+    const width = (l, j) => (styled ? { ac: 1.8, hi: 1.5, bg: 1 }[l.role] : j ? 1.2 : 1.5);
+    const one = (l, j) => `<path class="pl${l.role ? ' pl-' + l.role : ''}" data-j="${l.j}" d="${path(l)}" fill="none" style="stroke:${l.color}" stroke-width="${width(l, j)}" stroke-linejoin="round"${l.dash ? ' stroke-dasharray="5 4"' : ''}/>${dots(l)}`;
+    const order = { bg: 0, hi: 1, ac: 2 };
+    const drawn = styled
+      ? lines.slice().sort((a, b) => order[a.role] - order[b.role]).map(one).join('')
+      : lines.map(one).reverse().join('');
+    // Names at the line ends. Names that end at the same point are spread out so none sits on another.
+    const ends = {};
+    named.forEach((l) => {
+      let k = n - 1;
+      while (k >= 0 && l.v[k] == null) k--;
+      if (k >= 0) (ends[k] = ends[k] || []).push({ l, x: x(k) + 6, y: Math.min(yb - 2, y(l.v[k]) + 4) });
+    });
+    let names = '';
+    Object.values(ends).forEach((g) => {
+      g.sort((a, b) => a.y - b.y);
+      for (let i = 1; i < g.length; i++) g[i].y = Math.max(g[i].y, g[i - 1].y + 12);
+      g[g.length - 1].y = Math.min(g[g.length - 1].y, yb - 2);
+      for (let i = g.length - 2; i >= 0; i--) g[i].y = Math.min(g[i].y, g[i + 1].y - 12);
+      g.forEach((b) => { names += `<text class="pl-name" x="${f(b.x)}" y="${f(b.y)}" font-size="11">${esc(b.l.name)}</text>`; });
+    });
+    const clip = `pc${box.dataset.pchart.replace(/\W/g, '-')}-${Math.random().toString(36).slice(2, 7)}`;
     const label = counted ? `Chart by ${ch.axis.toLowerCase()}` : 'Growth of $1';
-    plot.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}: ${esc(ch.series.join(', '))}">
-      ${grid}${drawn}
-      <line x1="${L}" x2="${xe}" y1="${yb}" y2="${yb}" stroke="#474747"/>
-      <line x1="${xe}" x2="${xe}" y1="${T}" y2="${yb}" stroke="#474747"/>
+    const told = styled ? lines.filter((l) => l.role !== 'bg').map((l) => l.name).join(', ') + `, and ${lines.filter((l) => l.role === 'bg').length} others` : ch.series.join(', ');
+    plot.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}: ${esc(told)}">
+      <clipPath id="${clip}"><rect x="${L - 2}" y="${T - 2}" width="${xe - L + 4}" height="${yb - T + 2}"/></clipPath>
+      ${grid}<g clip-path="url(#${clip})">${drawn}</g>${names}
+      <line x1="${L}" x2="${xe}" y1="${yb}" y2="${yb}" style="stroke:var(--line2)"/>
+      <line x1="${xe}" x2="${xe}" y1="${T}" y2="${yb}" style="stroke:var(--line2)"/>
       <g class="xh" visibility="hidden" pointer-events="none">
-        <g class="xh-x"><line y1="${T}" y2="${yb}" stroke="#8f8f8f" stroke-dasharray="2 2"/></g>
-        ${lines.map((l) => `<circle class="xh-dot" r="3" fill="#000" stroke="${l.color}" stroke-width="1.5"/>`).join('')}
-        <g class="xh-d"><rect x="-38" y="${yb + 4}" width="76" height="16" fill="#474747"/>
+        <g class="xh-x"><line y1="${T}" y2="${yb}" style="stroke:var(--muted)" stroke-dasharray="2 2"/></g>
+        ${lines.map((l) => `<circle class="xh-dot" r="3" style="fill:var(--bg);stroke:${l.role === 'bg' ? 'var(--text)' : l.color}" stroke-width="1.5"/>`).join('')}
+        <g class="xh-d"><rect x="-38" y="${yb + 4}" width="76" height="16" style="fill:var(--line2)"/>
           <text class="xh-date" y="${yb + 16}" fill="#fff" font-size="11" text-anchor="middle"></text></g>
       </g></svg>`;
-    box._m = { lines, dates, n, W, L, xe, x, y, ch,
+    box._m = { lines, dates, n, W, L, xe: xl, x, y, ch, styled, yb,
       val: counted ? unitFmt(ch.unit, (v) => (Math.abs(v) < 10 && v % 1 ? 1 : 0)) : usd };
     pChartReadout(box, n - 1);
     if (!box._wired) {
@@ -1025,36 +1082,107 @@
       plot.addEventListener('pointerleave', () => {
         const xh = $('.xh', box);
         if (xh) xh.setAttribute('visibility', 'hidden');
+        box.querySelectorAll('.pl.hot').forEach((el) => el.classList.remove('hot'));
         if (box._m) pChartReadout(box, box._m.n - 1);
       });
     }
   }
 
   // The line above the plot, which doubles as the legend: the date, then each line's value on it.
-  function pChartReadout(box, k) {
-    const m = box._m;
-    $('.readout', box).innerHTML = `<b>${esc(pPoint(m.ch, k))}</b>` + m.lines.map((l) =>
-      ` · <span class="ser"><i class="sw" style="background:${l.color}"></i>${esc(l.name)} <b>${m.val(l.v[k])}</b></span>`).join('');
+  // Where grey lines stand behind the named ones, only the named ones are listed, plus the grey
+  // line nearest the pointer (hot).
+  function pChartReadout(box, k, hot) {
+    const m = box._m, ch = m.ch;
+    const listed = m.styled ? (ch.accent || []).concat(ch.highlight || []).map((j) => m.lines[j]) : m.lines;
+    const grey = m.lines.length - listed.length;
+    $('.readout', box).innerHTML = `<b>${esc(pPoint(ch, k))}</b>` + listed.map((l) =>
+      ` · <span class="ser"><i class="sw" style="background:${l.color}"></i>${esc(l.name)} <b>${m.val(l.v[k])}</b></span>`).join('')
+      + (hot ? ` · <span class="ser">${esc(hot.name)} <b>${m.val(hot.v[k])}</b></span>`
+        : grey > 0 ? ` · <span class="ser others">${grey} others in grey</span>` : '');
   }
 
-  // Crosshair: snaps to the nearest date, with a dot on every line that has a value there.
+  // Crosshair: snaps to the nearest date, with a dot on every line that has a value there. Among
+  // grey lines only the one nearest the pointer lights up and is named.
   function pChartHover(box, e) {
     const m = box._m, svg = $('svg', box);
-    if (!m || !svg) return;
-    const rc = svg.getBoundingClientRect(), sx = (e.clientX - rc.left) * (m.W / rc.width);
+    if (!m || !svg || m.ranked) return;
+    const rc = svg.getBoundingClientRect(), s = m.W / rc.width;
+    const sx = (e.clientX - rc.left) * s, sy = (e.clientY - rc.top) * s;
     const k = Math.max(0, Math.min(m.n - 1, Math.round(((sx - m.L) / (m.xe - m.L)) * (m.n - 1))));
     const X = m.x(k).toFixed(1);
+    let hot = null, near = 28;
+    if (m.styled) {
+      m.lines.forEach((l) => {
+        if (l.role !== 'bg' || l.v[k] == null) return;
+        const d = Math.abs(Math.min(m.yb, m.y(l.v[k])) - sy);
+        if (d < near) { near = d; hot = l; }
+      });
+      svg.querySelectorAll('.pl-bg').forEach((el) => el.classList.toggle('hot', !!hot && +el.dataset.j === hot.j));
+    }
     $('.xh', svg).setAttribute('visibility', 'visible');
     $('.xh-x', svg).setAttribute('transform', `translate(${X},0)`);
     svg.querySelectorAll('.xh-dot').forEach((dot, j) => {
-      const v = m.lines[j].v[k];
+      const l = m.lines[j], v = l.v[k], show = v != null && m.y(v) <= m.yb + 1 && (l.role !== 'bg' || l === hot);
       // 'inherit', not 'visible': a visible child would still show once the group is hidden again.
-      dot.setAttribute('visibility', v == null ? 'hidden' : 'inherit');
-      if (v != null) dot.setAttribute('transform', `translate(${X},${m.y(v).toFixed(1)})`);
+      dot.setAttribute('visibility', show ? 'inherit' : 'hidden');
+      if (show) dot.setAttribute('transform', `translate(${X},${m.y(v).toFixed(1)})`);
     });
     $('.xh-d', svg).setAttribute('transform', `translate(${Math.max(m.L + 38, Math.min(m.xe - 38, +X))},0)`);
     $('.xh-date', svg).textContent = pPoint(m.ch, k);
-    pChartReadout(box, k);
+    pChartReadout(box, k, hot);
+  }
+
+  // A ranked chart: one row of the file at a time (the buttons pick it, the last to start with),
+  // as bars sorted from largest to smallest. Accent columns are the project's own figures; the
+  // readout says how many of the others are above each.
+  function drawRanked(box, ch) {
+    const plot = $('.plot', box), n = ch.dates.length;
+    const row = Math.min(n - 1, box._row == null ? n - 1 : box._row);
+    const acc = new Set(ch.accent || []), high = new Set(ch.highlight || []);
+    const items = ch.series.map((name, j) => ({ name, v: (ch.values[j] || [])[row], role: acc.has(j) ? 'ac' : high.has(j) ? 'hi' : 'bg' }))
+      .filter((it) => it.v != null).sort((a, b) => b.v - a.v);
+    box.querySelectorAll('[data-prow]').forEach((b) => b.classList.toggle('on', +b.dataset.prow === row));
+    if (!box._wired) {
+      box._wired = true;
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-prow]');
+        if (b) { box._row = +b.dataset.prow; drawPChart(box); }
+      });
+      plot.addEventListener('pointermove', (e) => {
+        const m = box._m, svg = $('svg', box);
+        if (!m || !svg) return;
+        const rc = svg.getBoundingClientRect(), i = Math.floor(((e.clientY - rc.top) * (m.W / rc.width) - m.T) / m.RH);
+        rankedReadout(box, i >= 0 && i < m.items.length ? i : null);
+      });
+      plot.addEventListener('pointerleave', () => { if (box._m) rankedReadout(box, null); });
+    }
+    if (!items.length) { plot.innerHTML = ''; box._m = null; $('.readout', box).textContent = 'No figures to chart'; return; }
+    const val = unitFmt(ch.unit, (v) => (Math.abs(v) < 10 && v % 1 ? 1 : 0));
+    const W = Math.max(300, Math.round(plot.clientWidth)), RH = 17, T = 6, f = (v) => v.toFixed(1);
+    const top = Math.max(...items.map((it) => it.v), 0) || 1;
+    const x0 = Math.max(...items.map((it) => it.name.length)) * 6.7 + 18, x1 = W - val(top).length * 6.7 - 14;
+    const H = T + items.length * RH + 6;
+    const others = items.filter((it) => it.role !== 'ac');
+    items.forEach((it) => { it.above = others.filter((o) => o !== it && o.v > it.v).length; });
+    const bars = items.map((it, i) => {
+      const yy = T + i * RH, w = Math.max(1, (Math.max(it.v, 0) / top) * (x1 - x0));
+      return `<g class="rk rk-${it.role}"><rect class="rk-row" x="0" y="${yy}" width="${W}" height="${RH}"/>
+        <text class="rk-n" x="${f(x0 - 8)}" y="${yy + 12}" text-anchor="end" font-size="11">${esc(it.name)}</text>
+        <rect class="rk-bar" x="${f(x0)}" y="${yy + 4}" width="${f(w)}" height="${RH - 8}"/>
+        <text class="rk-v" x="${f(x0 + w + 6)}" y="${yy + 12}" font-size="11">${val(it.v)}</text></g>`;
+    }).join('');
+    plot.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(pPoint(ch, row))}, largest first: ${esc(items.map((it) => `${it.name} ${val(it.v)}`).join(', '))}">
+      ${bars}<line x1="${f(x0)}" x2="${f(x0)}" y1="${T}" y2="${H - 6}" style="stroke:var(--line2)"/></svg>`;
+    box._m = { ranked: true, items, others: others.length, row, ch, val, W, T, RH };
+    rankedReadout(box, null);
+  }
+
+  // Idle, the readout places each accent figure among the others; over a bar, it names that bar.
+  function rankedReadout(box, i) {
+    const m = box._m, it = i == null ? null : m.items[i];
+    const place = (a) => (a.role === 'ac' ? `${a.above} of ${m.others} above` : `${a.above + 1} of ${m.others}`);
+    const ser = (a) => ` · <span class="ser">${a.role === 'ac' ? '<i class="sw" style="background:var(--accent)"></i>' : ''}${esc(a.name)} <b>${m.val(a.v)}</b> <span class="others">${place(a)}</span></span>`;
+    $('.readout', box).innerHTML = `<b>${esc(pPoint(m.ch, m.row))}</b>` + (it ? ser(it) : m.items.filter((a) => a.role === 'ac').map(ser).join(''));
   }
 
   // ---------- panels, screens, routing ----------

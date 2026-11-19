@@ -7,6 +7,7 @@
   --panel2: #202020;
   --line: #2e2e2e;
   --line2: #474747;
+  --grid: #1f1f1f; /* the faint rules inside a project chart */
   --text: #d6d6d6;
   --row: #a3a3a3;
   --muted: #8f8f8f;
@@ -497,6 +498,31 @@ ol.steps .d { color: var(--muted); font-size: 12px; }
 /* The readout doubles as the legend, so it wraps rather than cut a line's name off. */
 .pchart .readout { white-space: normal; }
 .pchart .ser { white-space: nowrap; }
+/* A chart with named lines over grey ones, or ranked bars. It keeps to a reading width, so a
+   wide window does not flatten it. The grey line under the pointer lights up. */
+.prj .pchart.styled { max-width: 920px; }
+.prj .pchart-t { margin-bottom: 0; }
+.pchart .others { color: var(--dim); }
+.pl-bg { opacity: .55; }
+.pl-bg.hot { opacity: 1; stroke: var(--text) !important; stroke-width: 1.6px; }
+.pl-name { fill: var(--text); stroke: var(--bg); stroke-width: 3px; paint-order: stroke; }
+.rng .rng-l { color: var(--muted); font-size: 11px; padding-right: 7px; }
+.ranked .plot { cursor: default; }
+/* On a narrow screen the row buttons drop under the readout instead of squeezing it. */
+.ranked .chart-bar { flex-wrap: wrap; row-gap: 4px; }
+.ranked .readout { flex: 1 1 250px; }
+.ranked .sp { display: none; }
+.ranked .rng { margin-left: auto; }
+.ranked .ser { white-space: normal; }
+.rk-row { fill: transparent; }
+.rk:hover .rk-row { fill: var(--panel2); }
+.rk-bar { fill: var(--line2); }
+.rk-hi .rk-bar { fill: var(--row); }
+.rk-ac .rk-bar { fill: var(--accent); }
+.rk-n, .rk-v { fill: var(--muted); }
+.rk-hi text, .rk-ac text { fill: var(--text); }
+.reader .pchart-t { margin: 18px 0 6px; font-size: 13px; font-weight: 700; }
+.reader .chartbox { margin: 6px 0 16px; }
 .sw { display: inline-block; width: 7px; height: 7px; margin-right: 4px; vertical-align: 1px; }
 
 /* ---------- status bar and banner ---------- */
@@ -583,7 +609,7 @@ ol.steps .d { color: var(--muted); font-size: 12px; }
   :root {
     color-scheme: light;
     --page: #fff; --bg: #fff; --panel: #fff; --panel2: #f2f2f2; --zebra: #f6f6f6; --hover: #f2f2f2;
-    --text: #111; --muted: #555; --dim: #777; --line: #ccc; --line2: #bbb;
+    --text: #111; --muted: #555; --dim: #777; --line: #ccc; --line2: #bbb; --grid: #e6e6e6;
   }
   body { overflow: visible; height: auto; }
   .topbar, .statusbar, .banner, #p-qm, #p-wire, .panel-head, .reader-bar, .secnav { display: none !important; }
