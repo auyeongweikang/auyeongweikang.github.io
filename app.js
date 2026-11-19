@@ -15,6 +15,7 @@
     sort: { k: 'ticker', dir: 1 },
     qmQ: '', // text typed in the quote monitor's filter box
     ctx: null, // ticker loaded in the command bar
+    pctx: false, // PRJ loaded in the command bar: a number alone then opens that project
     wire: { q: '', type: 'ALL', ticker: null },
     wb: { ticker: null, sheet: 0, row: null }, // Excel model on the MODEL page: sheet shown, row charted
     ws: 'Main',
@@ -805,10 +806,10 @@
     return `<div class="page"><h1>Help</h1>
       <p class="lead">Everything here works by clicking. The command bar is the faster way round.</p>
       <h2>Commands</h2><table class="grid" style="white-space:normal"><tbody>${g}</tbody></table>
-      ${projects.length ? `<p class="muted" style="margin-top:8px">Type PRJ and a project’s number, for example <b>PRJ ${projects[0].n}</b>, to open it.</p>` : ''}
+      ${projects.length ? `<p class="muted" style="margin-top:8px">Type PRJ and a project’s number, for example <b>PRJ ${projects[0].n}</b>, to open it. Or run PRJ on its own: it stays in the command bar, and a number alone then opens that project.</p>` : ''}
       <h2>Ticker commands</h2><p class="muted">Type a ticker, then a command. For example <b>HLXB MODEL</b>.</p>
       <table class="grid" style="white-space:normal"><tbody>${t}</tbody></table>
-      <h2>Keys</h2>${kv([['` or /', 'Focus the command bar'], ['↑ ↓', 'Move through results'], ['Enter', 'Run the highlighted result'], ['Esc', 'Close the results'], ['Backspace on empty bar', 'Clear the loaded ticker']])}
+      <h2>Keys</h2>${kv([['` or /', 'Focus the command bar'], ['↑ ↓', 'Move through results'], ['Enter', 'Run the highlighted result'], ['Esc', 'Close the results'], ['Backspace on empty bar', 'Clear the loaded ticker or PRJ']])}
       <h2>Windows</h2>${kv([['Drag a title bar', 'Move the window'], ['Drag an edge or corner', 'Resize that window only; it can overlap the others'], ['Click a window', 'Bring it to the front'], ['Double-click a title bar, or ⤢', 'Maximise or restore'], ['×', 'Close; QM, N, CONTACT or any page command reopens it'], ['Reset layout', 'Back to the default arrangement']])}
       <h2>About the data</h2><p class="muted">Prices are entered by hand and dated, not live. Views are personal and not investment advice.</p></div>`;
   }
@@ -833,6 +834,7 @@
   function viewProjects() {
     return `<div class="page"><h1>Projects</h1>
       <p class="lead">Research and builds beyond the stock calls.</p>
+      <p class="muted">PRJ is loaded in the command bar: type a project’s number and press Enter, or click a row.</p>
       ${projectRows()}</div>`;
   }
 
@@ -1366,11 +1368,17 @@
     cancelAnimationFrame(chartRaf);
     chartRaf = requestAnimationFrame(drawCharts);
   }).observe($('#mainBody'));
-  function setCtx(t) {
-    state.ctx = t;
-    const c = $('#ctx');
-    c.hidden = !t;
-    c.innerHTML = t ? `${t}<span class="x">×</span>` : '';
+  // The command bar holds either a ticker (commands then apply to it) or PRJ (a number alone
+  // then opens that project). Loading one clears the other; setCtx(null) clears both.
+  const BAR_HINT = $('#cmdInput').placeholder;
+  function setCtx(t, prj) {
+    state.ctx = t || null;
+    state.pctx = !t && !!prj;
+    const c = $('#ctx'), label = state.ctx || (state.pctx ? 'PRJ' : '');
+    c.hidden = !label;
+    c.title = state.pctx ? 'Clear PRJ' : 'Clear the loaded ticker';
+    c.innerHTML = label ? `${label}<span class="x">×</span>` : '';
+    $('#cmdInput').placeholder = state.pctx ? 'Type a project’s number, then Enter' : BAR_HINT;
     renderQM();
   }
   function go(hash) {
@@ -1391,6 +1399,7 @@
     } else if (a === 'n' && postBy[b]) setMain('UPDATE', postBy[b].tickers.join(' '), viewPost(postBy[b]));
     else if (a === 'p' && projects.length) {
       // An unknown number falls back to the list; a project without a write-up shows its overview.
+      setCtx(null, true);
       const p = projBy[b || ''];
       if (p && c === 'writeup' && p.writeup) setMain('WRITE-UP', pName(p), prjNav(p, 'writeup') + viewWriteup(p));
       else if (p) setMain('PROJECT', String(p.n), prjNav(p, 'ovr') + viewProject(p));
@@ -1413,7 +1422,7 @@
   // Offered once a ticker note has a Checkpoints section.
   if (anyCheckpoints) GLOBAL.splice(3, 0, { code: 'CP', desc: 'Checkpoints: what each call needs next, soonest first', run: () => go('#/cp') });
   // Offered once there is a project. Goes in straight after N.
-  if (projects.length) GLOBAL.splice(3, 0, { code: 'PRJ', desc: 'Projects: research and builds beyond the stock calls', run: () => go('#/p') });
+  if (projects.length) GLOBAL.splice(3, 0, { code: 'PRJ', desc: 'Projects: research and builds beyond the stock calls', stay: true, run: () => { setCtx(null, true); go('#/p'); } });
   const TICKER = [
     { code: 'DES', desc: 'Overview: my call, thesis in brief, checkpoints, chart and catalysts', sub: '' },
     { code: 'THESIS', desc: 'The full written thesis', sub: '/thesis' },
@@ -1441,7 +1450,7 @@
     }
     if (!typedTicker) {
       GLOBAL.filter(match).sort(rank).forEach((c) => items.push({
-        group: 'COMMANDS', html: `<span class="chip">${c.code}</span><span class="desc">${esc(c.desc)}</span>`, run: c.run,
+        group: 'COMMANDS', html: `<span class="chip">${c.code}</span><span class="desc">${esc(c.desc)}</span>`, run: c.run, stay: c.stay,
       }));
       D.ideas.filter((i) => !q || i.ticker.startsWith(q) || i.name.toUpperCase().includes(q)).forEach((i) => {
         const c = calc(i);
@@ -1452,8 +1461,9 @@
         });
       });
       // "PRJ" lists every project under the command, and "PRJ 1" (or "PRJ1") narrows it to project 1.
-      // Words from a project's title or blurb find it too.
-      const pq = q.match(/^PRJ\s*(\d*)$/);
+      // With PRJ loaded in the bar, the number alone does the same. Words from a project's title
+      // or blurb find it too.
+      const pq = q.match(state.pctx ? /^(?:PRJ\s*)?(\d*)$/ : /^PRJ\s*(\d*)$/);
       projects.filter((p) => !q || (pq ? String(p.n).startsWith(pq[1]) : p.title.toUpperCase().includes(q) || (p.blurb || '').toUpperCase().includes(q))).forEach((p) => items.push({
         group: 'PROJECTS', prj: p.n,
         html: `<span class="chip tk">${pName(p)}</span><span class="desc">${esc(p.title)} <span class="muted">· ${esc(p.status)}</span></span>`,
@@ -1467,8 +1477,10 @@
         }));
       }
     }
-    // An exact command or ticker beats everything else when Enter is pressed.
-    const order = ['COMMANDS', 'IDEAS', 'PROJECTS', 'UPDATES'];
+    // An exact command or ticker beats everything else when Enter is pressed. With PRJ loaded and
+    // nothing but a number (or nothing) typed, the projects come first.
+    const numbered = state.pctx && !typedTicker && /^\d*$/.test(q);
+    const order = numbered ? ['PROJECTS', 'COMMANDS', 'IDEAS', 'UPDATES'] : ['COMMANDS', 'IDEAS', 'PROJECTS', 'UPDATES'];
     items.sort((a, b) => (a.group === b.group ? 0 : order.indexOf(a.group) - order.indexOf(b.group)));
     return items;
   }
@@ -1489,7 +1501,7 @@
     state.pal.items = buildResults(input.value);
     // Prefer an idea whose ticker was typed exactly, or the project whose number was typed
     // after PRJ, over a command that merely matches.
-    const q = input.value.trim().toUpperCase(), pq = q.match(/^PRJ\s*(\d+)$/);
+    const q = input.value.trim().toUpperCase(), pq = q.match(state.pctx ? /^(?:PRJ\s*)?(\d+)$/ : /^PRJ\s*(\d+)$/);
     const exact = pq ? state.pal.items.findIndex((it) => it.prj === +pq[1])
       : q ? state.pal.items.findIndex((it) => it.group === 'IDEAS' && it.html.includes(`>${q}<`)) : -1;
     const cmdExact = GLOBAL.some((c) => c.code === q) || TICKER.some((c) => c.code === q);
@@ -1502,6 +1514,8 @@
     if (!it) return;
     input.value = '';
     closePal();
+    // PRJ stays in the bar with the cursor in it, so the project's number can be typed next.
+    if (it.stay) { it.run(); input.focus(); openPal(); return; }
     input.blur();
     it.run();
   }
@@ -1515,7 +1529,7 @@
     else if (e.key === 'ArrowDown' && n) { e.preventDefault(); state.pal.idx = (state.pal.idx + 1) % n; renderPal(); }
     else if (e.key === 'ArrowUp' && n) { e.preventDefault(); state.pal.idx = (state.pal.idx - 1 + n) % n; renderPal(); }
     else if (e.key === 'Enter') { e.preventDefault(); runPal(state.pal.idx); }
-    else if (e.key === 'Backspace' && !input.value && state.ctx) { setCtx(null); openPal(); }
+    else if (e.key === 'Backspace' && !input.value && (state.ctx || state.pctx)) { setCtx(null); openPal(); }
   });
   // ---------- picture zoom ----------
   // A picture in a thesis opens enlarged over the page. A click anywhere, or Esc, closes it.

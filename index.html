@@ -14,7 +14,7 @@
   <header class="topbar">
     <div class="cmd">
       <span class="prompt">&gt;</span>
-      <button class="ctx" id="ctx" hidden title="Clear the loaded ticker"></button>
+      <button class="ctx" id="ctx" hidden title="Clear what is loaded in the command bar"></button>
       <input id="cmdInput" autocomplete="off" spellcheck="false" aria-label="Command bar"
              placeholder="Type a command or a ticker. Press ` to focus">
     </div>
@@ -123,6 +123,6 @@
   <!-- data.js is rebuilt on every update. The time in its address makes the browser fetch the current
        copy on each visit, so a visitor never sees content that has since been changed or removed. -->
   <script>document.write('<script src="data.js?t=' + Date.now() + '"><\/script>');</script>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
