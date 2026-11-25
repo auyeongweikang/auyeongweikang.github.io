@@ -748,7 +748,8 @@
       <h1>${esc(p.headline)}</h1>
       ${p.tickers.length ? `<div class="matched">Matched: ${p.tickers.map((t) => `<button class="tkchip" data-go="#/s/${t}">${t}</button>`).join('')}</div>` : ''}
       ${p.change ? `<div class="change">Tracker change · ${esc(p.change.field)}: <s>${esc(p.change.from)}</s> → <b>${esc(p.change.to)}</b></div>` : ''}
-      ${p.body ? p.body.map((x) => `<p>${esc(x)}</p>`).join('') : '<p class="muted">Headline-only update.</p>'}
+      ${p.html ? `<div class="md">${withCharts(p, p.html)}</div>`
+        : p.body ? p.body.map((x) => `<p>${esc(x)}</p>`).join('') : '<p class="muted">Headline-only update.</p>'}
       ${p.link ? `<p><button class="btn" data-go="${p.link.go}">${esc(p.link.label)} ›</button></p>` : ''}
     </article>`;
   }
@@ -900,23 +901,30 @@
   // A project shows every chart its note lists (p.charts, from build_site.py's read_chart). A chart
   // file can also say how it is drawn: "accent" and "highlight" columns stand out and are named at
   // their line ends while every other column becomes a thin grey line, "log" and "floor" set the
-  // scale, and form "ranked" turns it into sorted bars for one row at a time.
+  // scale, form "ranked" turns it into sorted bars for one row at a time, and form "level" draws a
+  // chart of dates with its figures as they are. An update shows the charts its note embeds the
+  // same way; its charts are found by "u." and the update's id, a project's by its number.
+  const chartOwner = (p) => (p.n != null ? String(p.n) : 'u.' + p.id);
   const pChartOf = (box) => {
-    const [n, k] = (box.dataset.pchart || '').split(':'), p = projBy[n];
+    const [n, k] = (box.dataset.pchart || '').split(':'), p = n.startsWith('u.') ? postBy[n.slice(2)] : projBy[n];
     return p && (p.charts || [])[+k || 0];
   };
+  // "# decimals:" in a chart file fixes how many decimal places its figures are shown to.
+  const dpOf = (ch, usual) => (ch.dp != null ? () => ch.dp : usual);
 
   // The frame of one chart: its title, the readout line (plus a button per row on a ranked
   // chart), an empty plot and the caption. drawPChart fills the plot once its width is known.
   function chartFrame(p, k, heading) {
     const ch = (p.charts || [])[k];
-    if (!ch || !ch.dates || ch.dates.length < 2) return '';
-    const ranked = ch.form === 'ranked', styled = ranked || !!(ch.accent || ch.highlight);
-    const note = ch.note || (ch.axis ? '' : 'Growth of $1, rebased at the first date.');
-    const rows = ranked ? `<span class="sp"></span><span class="rng"><span class="rng-l">${esc(ch.axis)}</span>${
+    const ranked = !!ch && ch.form === 'ranked';
+    if (!ch || !ch.dates || ch.dates.length < (ranked ? 1 : 2)) return '';
+    const styled = ranked || !!(ch.accent || ch.highlight);
+    const note = ch.note || (ch.axis || ch.form === 'level' ? '' : 'Growth of $1, rebased at the first date.');
+    // A ranked chart with a single row has nothing to pick between, so it gets no row buttons.
+    const rows = ranked && ch.dates.length > 1 ? `<span class="sp"></span><span class="rng"><span class="rng-l">${esc(ch.axis)}</span>${
       ch.dates.map((d, j) => `<button data-prow="${j}">${esc(d)}</button>`).join('')}</span>` : '';
     return `${ch.title ? `<${heading} class="pchart-t">${esc(ch.title)}</${heading}>` : ''}
-    <div class="chartbox pchart${styled ? ' styled' : ''}${ranked ? ' ranked' : ''}" data-pchart="${p.n}:${k}">
+    <div class="chartbox pchart${styled ? ' styled' : ''}${ranked ? ' ranked' : ''}" data-pchart="${chartOwner(p)}:${k}">
       <div class="chart-bar"><span class="readout"></span>${rows}</div>
       <div class="plot"></div>
       ${note ? `<div class="note">${esc(note)}</div>` : ''}
@@ -973,7 +981,10 @@
     const ch = pChartOf(box), plot = $('.plot', box);
     if (!ch || !plot) return;
     if (ch.form === 'ranked') { drawRanked(box, ch); return; }
-    const dates = ch.dates, n = dates.length, counted = !!ch.axis, log = !counted || !!ch.log;
+    // asIs: the figures are drawn as they are (a counted chart, or a chart of dates with form
+    // "level") instead of as growth of $1.
+    const dates = ch.dates, n = dates.length, counted = !!ch.axis, level = !counted && ch.form === 'level';
+    const asIs = counted || level, log = !asIs || (counted && !!ch.log);
     const acc = new Set(ch.accent || []), high = new Set(ch.highlight || []), dash = new Set(ch.dashed || []);
     const styled = acc.size + high.size > 0;
     const floor = counted && log && ch.floor > 0 ? ch.floor : 0;
@@ -984,7 +995,7 @@
       const role = !styled ? '' : acc.has(j) ? 'ac' : high.has(j) ? 'hi' : 'bg';
       return { name, j, role, dash: dash.has(j),
         color: styled ? { ac: 'var(--accent)', hi: 'var(--text)', bg: 'var(--dim)' }[role] : PCOLS[Math.min(j, PCOLS.length - 1)],
-        v: dates.map((_, k) => (counted ? (raw[k] == null || (log && raw[k] <= 0) ? null : raw[k])
+        v: dates.map((_, k) => (asIs ? (raw[k] == null || (log && raw[k] <= 0) ? null : raw[k])
           : base && raw[k] != null && raw[k] > 0 ? raw[k] / base : null)) };
     });
     const all = lines.flatMap((l) => l.v.filter((v) => v != null));
@@ -993,7 +1004,7 @@
     // The lines that stand out are named where they end, in a gutter kept clear for the names.
     const named = styled && W >= 560 ? lines.filter((l) => l.role !== 'bg') : [];
     const labW = named.length ? Math.max(...named.map((l) => l.name.length)) * 6.7 + 12 : 0;
-    const L = 10, R = counted ? 60 : 52, T = 12, B = 24, xe = W - R, xl = xe - labW, yb = H - B;
+    const L = 10, R = asIs ? 60 : 52, T = 12, B = 24, xe = W - R, xl = xe - labW, yb = H - B;
     const most = Math.max(3, Math.floor((yb - T) / 30));
     let lo, hi, y, ticks, tick;
     if (log) {
@@ -1005,14 +1016,22 @@
       hi += pad;
       ticks = logTicks(10 ** lo, 10 ** hi, most);
       y = (v) => T + ((hi - Math.log10(v)) / (hi - lo)) * (yb - T);
-      tick = counted ? unitFmt(ch.unit, (v) => (v < 1 ? 1 : 0)) : usdTick;
+      tick = counted ? unitFmt(ch.unit, dpOf(ch, (v) => (v < 1 ? 1 : 0))) : usdTick;
     } else {
-      lo = Math.min(0, ...all); hi = Math.max(...all) * 1.06 || 1;
+      const mn = Math.min(...all), mx = Math.max(...all);
+      if (level && mn > 0) {
+        // Rates and spreads sit in a narrow band well above zero, so the scale follows the
+        // figures (with a little room) instead of starting at zero and flattening them.
+        const room = (mx - mn || mx) * 0.08;
+        lo = Math.max(0, mn - room); hi = mx + room;
+      } else { lo = Math.min(0, mn); hi = mx * 1.06 || 1; }
       const step = niceStep(hi - lo, Math.min(most, 6));
       ticks = [];
       for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) ticks.push(+v.toPrecision(12));
       y = (v) => T + ((hi - v) / (hi - lo)) * (yb - T);
-      tick = unitFmt(ch.unit, () => (step < 1 ? 1 : 0));
+      // A level chart's labels carry as many decimals as its spacing needs (0.25 apart needs two).
+      const stepDp = step % 1 === 0 ? 0 : (step * 10) % 1 === 0 ? 1 : 2;
+      tick = unitFmt(ch.unit, () => (level ? stepDp : step < 1 ? 1 : 0));
     }
     const x = (k) => L + (k / (n - 1)) * (xl - L);
     const f = (v) => v.toFixed(1);
@@ -1062,7 +1081,7 @@
       g.forEach((b) => { names += `<text class="pl-name" x="${f(b.x)}" y="${f(b.y)}" font-size="11">${esc(b.l.name)}</text>`; });
     });
     const clip = `pc${box.dataset.pchart.replace(/\W/g, '-')}-${Math.random().toString(36).slice(2, 7)}`;
-    const label = counted ? `Chart by ${ch.axis.toLowerCase()}` : 'Growth of $1';
+    const label = counted ? `Chart by ${ch.axis.toLowerCase()}` : level ? 'Chart by date' : 'Growth of $1';
     const told = styled ? lines.filter((l) => l.role !== 'bg').map((l) => l.name).join(', ') + `, and ${lines.filter((l) => l.role === 'bg').length} others` : ch.series.join(', ');
     plot.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}: ${esc(told)}">
       <clipPath id="${clip}"><rect x="${L - 2}" y="${T - 2}" width="${xe - L + 4}" height="${yb - T + 2}"/></clipPath>
@@ -1076,7 +1095,7 @@
           <text class="xh-date" y="${yb + 16}" fill="#fff" font-size="11" text-anchor="middle"></text></g>
       </g></svg>`;
     box._m = { lines, dates, n, W, L, xe: xl, x, y, ch, styled, yb,
-      val: counted ? unitFmt(ch.unit, (v) => (Math.abs(v) < 10 && v % 1 ? 1 : 0)) : usd };
+      val: asIs ? unitFmt(ch.unit, dpOf(ch, (v) => (Math.abs(v) < 10 && v % 1 ? 1 : 0))) : usd };
     pChartReadout(box, n - 1);
     if (!box._wired) {
       box._wired = true;
@@ -1159,7 +1178,7 @@
       plot.addEventListener('pointerleave', () => { if (box._m) rankedReadout(box, null); });
     }
     if (!items.length) { plot.innerHTML = ''; box._m = null; $('.readout', box).textContent = 'No figures to chart'; return; }
-    const val = unitFmt(ch.unit, (v) => (Math.abs(v) < 10 && v % 1 ? 1 : 0));
+    const val = unitFmt(ch.unit, dpOf(ch, (v) => (Math.abs(v) < 10 && v % 1 ? 1 : 0)));
     const W = Math.max(300, Math.round(plot.clientWidth)), RH = 17, T = 6, f = (v) => v.toFixed(1);
     const top = Math.max(...items.map((it) => it.v), 0) || 1;
     const x0 = Math.max(...items.map((it) => it.name.length)) * 6.7 + 18, x1 = W - val(top).length * 6.7 - 14;
