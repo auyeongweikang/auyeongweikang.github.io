@@ -1350,6 +1350,21 @@ window.SITE = {
   ],
   "posts": [
     {
+      "id": "avr-thesis",
+      "date": "2026-11-25",
+      "time": "",
+      "type": "THESIS",
+      "tickers": [
+        "AVR"
+      ],
+      "headline": "AVR: FULL THESIS PUBLISHED; ON WATCH, PRICED AT $340M AGAINST $4.4BN FOR A RIVAL",
+      "html": "<p>I have written up the case for Anteris Technologies. It is developing DurAVR, a replacement aortic heart valve fitted through a catheter, now in its pivotal trial. Medtronic owns 16% of the company.</p><p>In 100 patients with the anatomy that today's valves handle worst, 1% were admitted to hospital for heart failure within a year. Trials of the approved valves report 3.5% to 6.7%. Heart scans showed the thickened heart muscle shrinking by 24%.</p><p>At $5.93 the business is priced at about $340M after its cash. In May, Boston Scientific paid a price that values MiRus, a private rival, at about $4.4bn. Every DurAVR result so far is from studies with no comparison group, and the pivotal trial has not read out. It is on my watchlist: I have not opened a position and have set no target.</p>",
+      "link": {
+        "label": "Open AVR thesis",
+        "go": "#/s/AVR/thesis"
+      }
+    },
+    {
       "id": "market-view",
       "date": "2026-11-25",
       "time": "",
