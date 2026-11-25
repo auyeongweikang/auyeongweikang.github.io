@@ -597,7 +597,8 @@
     // i.thesisDoc is a thesis written as its own Obsidian note. build_site.py turns it
     // into page text (thesis_note.py escapes everything in it), so its html is used as it is.
     const doc = i.thesisDoc;
-    const body = doc ? `<div class="md">${doc.html}</div>`
+    // A chart file the note embeds is drawn where it is embedded; its charts are found by "t." and the ticker.
+    const body = doc ? `<div class="md">${withCharts({ charts: doc.charts, chartKey: 't.' + i.ticker }, doc.html)}</div>`
       : i.thesis
       ? i.thesis.map(([h, p]) => `<h2>${esc(h)}</h2><p>${esc(p)}</p>`).join('')
       : `<h2>Summary</h2>${list(i.summary)}<p class="note" style="margin-top:12px">No long-form thesis for this name yet.</p>`;
@@ -904,9 +905,11 @@
   // scale, form "ranked" turns it into sorted bars for one row at a time, and form "level" draws a
   // chart of dates with its figures as they are. An update shows the charts its note embeds the
   // same way; its charts are found by "u." and the update's id, a project's by its number.
-  const chartOwner = (p) => (p.n != null ? String(p.n) : 'u.' + p.id);
+  // A thesis note's charts are found by "t." and the ticker.
+  const chartOwner = (p) => p.chartKey || (p.n != null ? String(p.n) : 'u.' + p.id);
   const pChartOf = (box) => {
-    const [n, k] = (box.dataset.pchart || '').split(':'), p = n.startsWith('u.') ? postBy[n.slice(2)] : projBy[n];
+    const [n, k] = (box.dataset.pchart || '').split(':');
+    const p = n.startsWith('t.') ? (ideaBy[n.slice(2)] || {}).thesisDoc : n.startsWith('u.') ? postBy[n.slice(2)] : projBy[n];
     return p && (p.charts || [])[+k || 0];
   };
   // "# decimals:" in a chart file fixes how many decimal places its figures are shown to.
