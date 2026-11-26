@@ -223,18 +223,28 @@ table.grid { width: 100%; border-collapse: separate; border-spacing: 0; white-sp
 /* The sorted heading gives up its spare padding so the marker fits. */
 #qmTable th:not(.l):has(.car) { padding-left: 0; }
 
-#qmTable .c-ticker { width: 12%; }
-#qmTable .c-stance { width: 12%; }
-#qmTable .c-initiated { width: 15%; }
-#qmTable .c-entry, #qmTable .c-target, #qmTable .c-mark { width: 11.5%; }
-#qmTable .c-ret { width: 12%; }
-#qmTable .c-upside, #qmTable .c-closed { width: 14.5%; }
+#qmTable .c-ticker { width: 10%; }
+#qmTable .c-stance { width: 11%; }
+#qmTable .c-initiated { width: 13%; }
+#qmTable .c-entry, #qmTable .c-target, #qmTable .c-mark { width: 10%; }
+#qmTable .c-ret { width: 10.5%; }
+#qmTable .c-vs { width: 13%; }
+#qmTable .c-upside, #qmTable .c-closed { width: 12.5%; }
+/* Vs index: the gap in points, then the index fund it is measured against. */
+#qmTable .c-vs .bm { margin-left: 5px; color: var(--muted); font-size: 10px; letter-spacing: .06em; }
 /* Narrow windows drop the least important columns first; the rest share the width. */
-@container (max-width: 580px) { #qmTable .c-initiated { display: none; } }
-@container (max-width: 490px) { #qmTable .c-entry { display: none; } }
-@container (max-width: 420px) { #qmTable .c-stance { display: none; } }
-@container (max-width: 350px) { #qmTable .c-target { display: none; } }
-@container (max-width: 290px) { #qmTable .c-upside, #qmTable .c-closed { display: none; } }
+@container (max-width: 660px) { #qmTable .c-initiated { display: none; } }
+@container (max-width: 570px) { #qmTable .c-entry { display: none; } }
+@container (max-width: 490px) { #qmTable .c-stance { display: none; } }
+@container (max-width: 420px) { #qmTable .c-target { display: none; } }
+@container (max-width: 350px) { #qmTable .c-upside, #qmTable .c-closed { display: none; } }
+@container (max-width: 290px) { #qmTable .c-vs { display: none; } }
+
+/* ---------- COMP: a call against its index ---------- */
+.compv .statrow { margin-top: 12px; }
+.compv .grid { max-width: 720px; }
+@container (max-width: 520px) { .compv .grid .c-st { display: none; } }
+.compv .grid .bm { color: var(--muted); }
 
 /* The footer is a quiet aside: smaller and dimmer than the rows above it. */
 .qm-foot { display: flex; align-items: center; gap: 10px; padding: 0 8px 0 0; font-size: 11px; color: var(--dim); }

@@ -76,6 +76,51 @@
   const qmPool = D.ideas.concat(closedLegs);
   const qmRet = (i) => (i.leg ? i.contrib : calc(i).ret);
 
+  // ---------- COMP: a call against its index ----------
+  // D.benchmarks[symbol].history holds an index fund's daily closes (build_site.py looks them
+  // up; each idea's "benchmark" names its fund). A call is compared with its fund over the same
+  // dates: from the first trading day on or after the call to the day of the price the monitor
+  // shows, or the day the call was closed. Prices only, so dividends are left out on both sides.
+  const benches = D.benchmarks || {};
+  const points = (v) => (v == null ? '—' : (v > 0 ? '+' : '') + (v * 100).toFixed(1));
+  const compMemo = {};
+  const comp = (i) => (i.leg ? null : i.ticker in compMemo ? compMemo[i.ticker] : (compMemo[i.ticker] = compOf(i)));
+  function compOf(i) {
+    const b = benches[i.benchmark], c = calc(i);
+    if (!b || !i.initiated || c.ret == null) return null;
+    const bh = b.history, hist = i.history && i.history.length > 1 ? i.history : null;
+    const end = i.status === 'closed' ? i.closedOn : hist ? hist[hist.length - 1][0] : D.asOf;
+    const k0 = bh.findIndex((p) => p[0] >= i.initiated);
+    let k1 = bh.length - 1;
+    while (k1 >= 0 && bh[k1][0] > end) k1--;
+    if (k0 < 0 || k1 < k0) return null;
+    const base = bh[k0][1], bRet = bh[k1][1] / base - 1;
+    // A long is ahead by what it made over the index. A short is ahead by how much worse the
+    // stock did than the index, so the index's own move is added back.
+    const ahead = i.stance === 'SHORT' ? c.ret + bRet : c.ret - bRet;
+    const out = { sym: i.benchmark, name: b.name, from: bh[k0][0], to: bh[k1][0], ret: c.ret, bRet, ahead,
+      stock: i.entry != null && c.mark != null ? c.mark / i.entry - 1 : null, dates: null };
+    // The two lines of the chart, on the stock's own trading days: the stock from the entry
+    // price, the index from its close on the day of the call.
+    const rows = hist && i.entry != null ? hist.filter((p) => p[0] >= i.initiated && p[0] <= end) : [];
+    if (rows.length > 1) {
+      let k = k0;
+      out.dates = rows.map((p) => p[0]);
+      out.s = rows.map((p) => p[1] / i.entry - 1);
+      out.bs = rows.map((p) => { while (k < bh.length - 1 && bh[k + 1][0] <= p[0]) k++; return bh[k][1] / base - 1; });
+    }
+    return out;
+  }
+  // In words, for a tooltip: what moved how much, over which dates, and who is ahead.
+  function compLine(i, c) {
+    const gap = `${Math.abs(c.ahead * 100).toFixed(1)} points ${c.ahead < 0 ? 'behind' : 'ahead of'} ${c.sym}`;
+    const span = `from ${fmtDate(c.from)} to ${fmtDate(c.to)}`;
+    if (i.position) return `The ${i.ticker} position returned ${pct(c.ret)} and ${c.sym} moved ${pct(c.bRet)} ${span}: ${gap}.`;
+    if (i.stance === 'SHORT') return `Short ${i.ticker}: the stock moved ${pct(c.stock)} and ${c.sym} moved ${pct(c.bRet)} ${span}, so the short is ${gap}.`;
+    return `${i.ticker} moved ${pct(c.ret)} and ${c.sym} moved ${pct(c.bRet)} ${span}: ${gap}.`;
+  }
+  const comps = D.ideas.filter(comp);
+
   // ---------- quote monitor ----------
   const QM_TABS = [
     { id: 'Active', f: (i) => i.status === 'active' },
@@ -96,6 +141,8 @@
     { k: 'target', label: 'Target', get: qmTarget },
     { k: 'mark', label: closed ? 'Exit' : 'Last', get: qmMark },
     { k: 'ret', label: 'Return', get: qmRet },
+    // The call's return against its index fund over the same dates, in percentage points.
+    ...(comps.length ? [{ k: 'vs', label: 'Vs index', get: (i) => (comp(i) ? comp(i).ahead : null) }] : []),
     // A closed call has no distance to target, so that tab shows the closing date instead.
     closed ? { k: 'closed', label: 'Closed', get: (i) => i.closedOn }
       : { k: 'upside', label: 'To target', get: qmUpside },
@@ -121,18 +168,21 @@
     const head = cols.map((c) =>
       `<th class="c-${c.k}${c.left ? ' l' : ''}" data-sort="${c.k}">${c.label}${state.sort.k === c.k ? `<i class="car${state.sort.dir > 0 ? '' : ' dn'}"></i>` : ''}</th>`).join('');
     const body = rows.map((i) => {
-      const c = calc(i);
+      const c = calc(i), v = comp(i);
+      const vs = !comps.length ? '' : v
+        ? `<td class="c-vs ${cls(v.ahead)}" title="${esc(compLine(i, v))}">${points(v.ahead)}<span class="bm">${esc(v.sym)}</span></td>`
+        : '<td class="c-vs">—</td>';
       return `<tr data-go="#/s/${i.ticker}" class="${state.ctx === i.ticker ? 'sel' : ''}" tabindex="0">
         <td class="c-ticker l tk">${i.ticker}${i.placeholder ? '<span class="ph" title="Some of these figures are placeholders, not the real trades">*</span>' : ''}${i.leg ? `<span class="opt" title="${esc(i.legFull)}. A leg of the ${i.ticker} options position that ${i.expired ? 'has expired' : 'was closed'}. Its profit is also counted in ${i.ticker}'s own row.">${esc(i.leg)}</span>` : ''}</td>
         <td class="c-stance l${i.leg ? '' : ` st-${i.stance.toLowerCase()}`}">${i.leg ? i.side : i.stance}${i.hedge ? '<span class="opt" title="Sold or bought to hedge the position, not as a trade of its own">HEDGE</span>' : ''}${i.position ? '<span class="opt" title="Held through options: Entry and Last are what the position cost and is worth, per share">OPT</span>' : ''}</td>
         <td class="c-initiated">${i.initiated ? fmtDate(i.initiated) : '—'}</td>
         <td class="c-entry">${px(qmEntry(i))}</td><td class="c-target">${px(qmTarget(i))}</td>
         <td class="c-mark ${cls(qmRet(i))}">${px(qmMark(i))}</td>
-        <td class="c-ret ${cls(qmRet(i))}"${i.leg ? ` title="This leg added ${signed(i.pnl)} per share to ${i.ticker}'s return of ${pct(i.whole)}. The percentage is measured on the whole position's cost, not on this leg's own premium."` : ''}>${pct(qmRet(i))}</td>
+        <td class="c-ret ${cls(qmRet(i))}"${i.leg ? ` title="This leg added ${signed(i.pnl)} per share to ${i.ticker}'s return of ${pct(i.whole)}. The percentage is measured on the whole position's cost, not on this leg's own premium."` : ''}>${pct(qmRet(i))}</td>${vs}
         ${closed ? `<td class="c-closed">${i.closedOn ? fmtDate(i.closedOn) : '—'}</td>` : `<td class="c-upside ${cls(qmUpside(i))}">${pct(qmUpside(i))}</td>`}</tr>`;
     }).join('');
     const none = q ? `No ticker matches “${esc(state.qmQ.trim())}” in this tab` : 'Nothing here yet';
-    $('#qmTable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="8" class="empty">${none}</td></tr>`}</tbody>`;
+    $('#qmTable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${cols.length}" class="empty">${none}</td></tr>`}</tbody>`;
     $('#qmFoot').textContent = `Prices as of ${fmtDate(D.asOf)}${D.hasSamples ? ' · Includes sample data' : ''}${rows.some((i) => i.placeholder) ? ' · * Placeholder figures' : ''}`;
     tabsMore();
   }
@@ -250,7 +300,8 @@
       return { k, label: stride === 12 ? dates[k].slice(0, 4) : MONTHS[mo] + (mo === 0 || j === 0 ? ` '${yy}` : '') };
     });
     if (ticks.length >= 3) return ticks;
-    const m = Math.min(5, n - 1);
+    // Fewer labels on a narrow plot, so neighbours do not run into each other.
+    const m = Math.min(x(n - 1) - x(0) < 360 ? 3 : 5, n - 1);
     return Array.from({ length: m + 1 }, (_, j) => {
       const k = Math.round((j * (n - 1)) / m);
       return { k, label: `${+dates[k].slice(8, 10)} ${MONTHS[+dates[k].slice(5, 7) - 1]}` };
@@ -359,6 +410,7 @@
   }
   const drawCharts = () => {
     document.querySelectorAll('.chartbox[data-chart]').forEach(drawChart);
+    document.querySelectorAll('.chartbox[data-comp]').forEach(drawComp);
     document.querySelectorAll('.chartbox[data-pchart]').forEach(drawPChart);
   };
 
@@ -396,6 +448,101 @@
       $('.xh-date', svg).textContent = fmtDate(m.dates[k]);
     }
     chartReadout(box, k);
+  }
+
+  // ---------- COMP chart ----------
+  // Two lines on one percentage scale: the stock since the call and its index over the same days.
+  const SW_INDEX = '#8f8f8f';
+  function compChart(i) {
+    const c = comp(i);
+    if (!c || !c.dates) return '<p class="muted">No daily prices for this ticker yet, so there is no chart.</p>';
+    return `<div class="chartbox" data-comp="${i.ticker}">
+      <div class="chart-bar"><span class="readout"></span></div>
+      <div class="plot"></div>
+      <div class="note">${i.ticker} is measured from my entry price of ${px(i.entry)}, ${esc(c.sym)} from its close on ${fmtDate(c.from)}. Price change only, dividends not included. Source: Yahoo Finance.</div>
+    </div>`;
+  }
+  function drawComp(box) {
+    const i = ideaBy[box.dataset.comp], plot = $('.plot', box), c = i && comp(i);
+    if (!c || !c.dates || !plot) return;
+    const s = c.s, bs = c.bs, n = s.length - 1;
+    const W = Math.max(300, Math.round(plot.clientWidth)), H = W < 480 ? 220 : 280;
+    const L = 10, R = 64, T = 14, B = 24, xe = W - R, yb = H - B;
+    let lo = Math.min(0, ...s, ...bs), hi = Math.max(0, ...s, ...bs);
+    const pad = (hi - lo || 0.1) * 0.08;
+    lo -= pad; hi += pad;
+    const x = (k) => L + (k / n) * (xe - L);
+    const y = (v) => T + ((hi - v) / (hi - lo)) * (yb - T);
+    const f = (v) => v.toFixed(1);
+    const step = niceStep(hi - lo, H < 250 ? 4 : 5);
+    const tick = (v) => (v > 0 ? '+' : '') + (v * 100).toFixed(step < 0.01 ? 1 : 0) + '%';
+    const ys = y(s[n]), yi0 = y(bs[n]);
+    // The index tag steps aside when it would sit on the stock's tag.
+    const yi = Math.abs(yi0 - ys) < 17 ? ys + (yi0 <= ys ? -17 : 17) : yi0;
+
+    let grid = '';
+    for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+      const yy = y(v), zero = Math.abs(v) < step / 2;
+      grid += `<line x1="${L}" x2="${xe + 4}" y1="${f(yy)}" y2="${f(yy)}" stroke="${zero ? '#474747' : '#1f1f1f'}"/>`;
+      if (Math.abs(yy - ys) > 13 && Math.abs(yy - yi) > 13) grid += `<text x="${xe + 8}" y="${f(yy + 4)}" fill="#8f8f8f" font-size="11">${zero ? '0%' : tick(v)}</text>`;
+    }
+    dateTicks(c.dates, x).forEach(({ k, label }) => {
+      const xx = x(k), anchor = xx < L + 26 ? 'start' : xx > xe - 26 ? 'end' : 'middle';
+      grid += `<line x1="${f(xx)}" x2="${f(xx)}" y1="${T}" y2="${yb + 4}" stroke="#1f1f1f"/>
+        <text x="${f(xx)}" y="${yb + 16}" fill="#8f8f8f" font-size="11" text-anchor="${anchor}">${label}</text>`;
+    });
+    const line = (vals, colour) => `<polyline points="${vals.map((v, k) => `${f(x(k))},${f(y(v))}`).join(' ')}" fill="none" stroke="${colour}" stroke-width="1.5" stroke-linejoin="round"/>`;
+    plot.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(compLine(i, c))}">
+      ${grid}
+      <line x1="${L}" x2="${xe}" y1="${yb}" y2="${yb}" stroke="#474747"/>
+      <line x1="${xe}" x2="${xe}" y1="${T}" y2="${yb}" stroke="#474747"/>
+      ${line(bs, SW_INDEX)}${line(s, '#45a873')}
+      <rect x="${xe + 1}" y="${f(yi - 8)}" width="${R - 7}" height="16" fill="#474747"/>
+      <text x="${xe + 6}" y="${f(yi + 4)}" fill="#fff" font-size="11">${pct(bs[n])}</text>
+      <rect x="${xe + 1}" y="${f(ys - 8)}" width="${R - 7}" height="16" fill="#45a873"/>
+      <text x="${xe + 6}" y="${f(ys + 4)}" fill="#03140b" font-size="11" font-weight="700">${pct(s[n])}</text>
+      <g class="xh" visibility="hidden" pointer-events="none">
+        <g class="xh-x"><line y1="${T}" y2="${yb}" stroke="#8f8f8f" stroke-dasharray="2 2"/></g>
+        <circle class="xh-b" r="3.5" fill="#000" stroke="${SW_INDEX}" stroke-width="1.5"/>
+        <circle class="xh-s" r="3.5" fill="#000" stroke="#45a873" stroke-width="1.5"/>
+        <g class="xh-d"><rect x="-36" y="${yb + 4}" width="72" height="16" fill="#474747"/>
+          <text class="xh-date" y="${yb + 16}" fill="#fff" font-size="11" text-anchor="middle"></text></g>
+      </g></svg>`;
+    box._m = { i, c, W, L, xe, x, y };
+    compReadout(box, n);
+    if (!box._wired) {
+      box._wired = true;
+      plot.addEventListener('pointermove', (e) => compHover(box, e));
+      plot.addEventListener('pointerleave', () => {
+        const xh = $('.xh', box);
+        if (xh) xh.setAttribute('visibility', 'hidden');
+        compReadout(box, box._m.c.s.length - 1);
+      });
+    }
+  }
+  // The line above the plot: both moves and the gap on the day under the pointer, or the latest when idle.
+  function compReadout(box, k) {
+    const { i, c } = box._m, sv = c.s[k], bv = c.bs[k];
+    const gap = i.stance === 'SHORT' ? bv - sv : sv - bv;
+    $('.readout', box).innerHTML = `<b>${fmtDate(c.dates[k])}</b>
+      · <i class="sw" style="background:var(--accent)"></i>${i.ticker} <b>${pct(sv)}</b>
+      · <i class="sw" style="background:${SW_INDEX}"></i>${esc(c.sym)} <b>${pct(bv)}</b>
+      · ${i.position ? 'Shares' : i.stance === 'SHORT' ? 'Short' : 'Call'} ${gap < 0 ? 'behind' : 'ahead'} by <b class="${cls(gap)}">${Math.abs(gap * 100).toFixed(1)} pts</b>`;
+  }
+  function compHover(box, e) {
+    const m = box._m, svg = $('svg', box);
+    if (!m || !svg) return;
+    const rc = svg.getBoundingClientRect(), n = m.c.s.length - 1;
+    const sx = (e.clientX - rc.left) * (m.W / rc.width);
+    const k = Math.max(0, Math.min(n, Math.round(((sx - m.L) / (m.xe - m.L)) * n)));
+    const X = m.x(k).toFixed(1);
+    $('.xh', svg).setAttribute('visibility', 'visible');
+    $('.xh-x', svg).setAttribute('transform', `translate(${X},0)`);
+    $('.xh-s', svg).setAttribute('transform', `translate(${X},${m.y(m.c.s[k]).toFixed(1)})`);
+    $('.xh-b', svg).setAttribute('transform', `translate(${X},${m.y(m.c.bs[k]).toFixed(1)})`);
+    $('.xh-d', svg).setAttribute('transform', `translate(${Math.max(m.L + 36, Math.min(m.xe - 36, +X))},0)`);
+    $('.xh-date', svg).textContent = fmtDate(m.c.dates[k]);
+    compReadout(box, k);
   }
 
   // ---------- security pages ----------
@@ -467,7 +614,7 @@
 
   function secNav(i, on) {
     const tab = (id, label, sub) => `<button class="tab${on === id ? ' on' : ''}" data-go="#/s/${i.ticker}${sub}">${label}</button>`;
-    return `<div class="secnav">${tab('des', 'DES', '')}${tab('thesis', 'THESIS', '/thesis')}${tab('model', 'MODEL', '/model')}${i.checkpoints ? tab('cp', 'CP', '/cp') : ''}<button class="tab" data-go="#/s/${i.ticker}/n">N</button></div>`;
+    return `<div class="secnav">${tab('des', 'DES', '')}${tab('thesis', 'THESIS', '/thesis')}${tab('model', 'MODEL', '/model')}${comp(i) ? tab('comp', 'COMP', '/comp') : ''}${i.checkpoints ? tab('cp', 'CP', '/cp') : ''}<button class="tab" data-go="#/s/${i.ticker}/n">N</button></div>`;
   }
 
   function viewDes(i) {
@@ -481,6 +628,8 @@
         ['Return', pct(c.ret), cls(c.ret)]]);
     if (i.status === 'active' && !pos) call.push(['To target', pct(c.upside), cls(c.upside)]);
     if (i.status === 'closed') call.push(['Closed', fmtDate(i.closedOn)]);
+    const v = comp(i);
+    if (v) call.push([`Vs ${v.sym}`, `${points(v.ahead)} pts`, cls(v.ahead)]);
     if (i.catalyst) call.push(['Next catalyst', i.catalyst.when]);
     if (i.checkpoints) {
       const t = cpTally(i.checkpoints);
@@ -499,6 +648,7 @@
         <div class="jump">
           <button class="btn" data-go="#/s/${i.ticker}/thesis">THESIS ›</button>
           <button class="btn" data-go="#/s/${i.ticker}/model">MODEL ›</button>
+          ${v ? `<button class="btn" data-go="#/s/${i.ticker}/comp">COMP ›</button>` : ''}
           <button class="btn" data-go="#/s/${i.ticker}/n">N ›</button>
         </div>
         <h2>Thesis in brief</h2>${list(i.summary)}
@@ -515,6 +665,54 @@
         <h2>Company</h2>${kv(i.stats || [])}
         ${i.scenarios ? `<h2>Valuation</h2>${kv(i.scenarios.map((s) => [`${s.name} (${Math.round(s.prob * 100)}%)`, px(s.value)]).concat([['Weighted', px(i.target)]]))}` : ''}
       </aside>
+    </div>`;
+  }
+
+  // ---------- COMP pages ----------
+  // ABVX COMP: one call against its index. COMP alone: every call, each against its own index.
+  function viewComp(i) {
+    const c = comp(i);
+    if (!c) return `<div class="page"><h1>${i.ticker} against an index</h1><p class="muted">There is nothing to compare yet: ${i.initiated ? 'no index prices were found for this call.' : 'this ticker has no call.'}</p></div>`;
+    const short = i.stance === 'SHORT', pos = !!i.position;
+    const mine = pos ? `my position, from ${fmtDate(i.initiated)}` : `my ${short ? 'short' : 'long'} from ${px(i.entry)}`;
+    const why = pos ? `${i.ticker} is held through options, so my return is the position's, not the share price's. The chart below shows the share price.`
+      : short ? `A short gains when the stock falls, so it is measured by how much worse the stock did than the index: ${i.ticker} ${pct(c.stock)} against ${esc(c.sym)} ${pct(c.bRet)}.`
+        : '';
+    return `<div class="page compv">
+      <h1>${i.ticker} against ${esc(c.sym)}</h1>
+      <p class="muted">${esc(c.name)} · ${fmtDate(c.from)} to ${fmtDate(c.to)}</p>
+      <div class="statrow">
+        <div class="stat"><b class="${cls(c.ret)}">${pct(c.ret)}</b><span>${mine}</span></div>
+        <div class="stat"><b>${pct(c.bRet)}</b><span>${esc(c.sym)} over the same dates</span></div>
+        <div class="stat"><b class="${cls(c.ahead)}">${Math.abs(c.ahead * 100).toFixed(1)} pts</b><span>${c.ahead < 0 ? 'behind' : 'ahead of'} the index</span></div>
+      </div>
+      ${why ? `<p class="note" style="margin-top:8px">${why}</p>` : ''}
+      <h2>${pos ? 'Share price and index since the call' : 'Since the call'}</h2>${compChart(i)}
+      <p style="margin-top:14px"><button class="btn" data-go="#/comp">ALL CALLS ›</button></p>
+    </div>`;
+  }
+  function viewCompAll() {
+    if (!comps.length) return '<div class="page"><h1>Calls against their index</h1><p class="muted">No call has index prices to compare with yet.</p></div>';
+    const ahead = comps.filter((i) => comp(i).ahead > 0).length;
+    const avg = comps.reduce((a, i) => a + comp(i).ahead, 0) / comps.length;
+    const rows = comps.slice().sort((a, b) => comp(b).ahead - comp(a).ahead).map((i) => {
+      const c = comp(i);
+      return `<tr data-go="#/s/${i.ticker}/comp" tabindex="0" title="${esc(compLine(i, c))}">
+        <td class="l"><b>${i.ticker}</b></td><td class="l c-st">${i.stance}${i.position ? ' <span class="opt">OPT</span>' : ''}${i.status === 'closed' ? ' <span class="opt">CLOSED</span>' : ''}</td>
+        <td>${fmtDate(c.from)}</td><td class="${cls(c.ret)}">${pct(c.ret)}</td>
+        <td>${pct(c.bRet)} <span class="bm">${esc(c.sym)}</span></td><td class="${cls(c.ahead)}">${points(c.ahead)}</td></tr>`;
+    }).join('');
+    const funds = [...new Set(comps.map((i) => comp(i).sym))].map((s) => `${s} (${benches[s].name})`);
+    return `<div class="page compv">
+      <h1>Calls against their index</h1>
+      <p class="lead">Each call next to the index fund for its sector over the same dates, so a return can be told apart from a rising market.</p>
+      <div class="statrow">
+        <div class="stat"><b>${ahead}/${comps.length}</b><span>calls ahead of their index</span></div>
+        <div class="stat"><b class="${cls(avg)}">${points(avg)} pts</b><span>average gap</span></div>
+      </div>
+      <h2>By call</h2>
+      <table class="grid"><thead><tr><th class="l">Ticker</th><th class="l c-st">Stance</th><th>Since</th><th>Return</th><th>Index</th><th>Ahead, pts</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="note" style="margin-top:8px">Index funds: ${esc(funds.join(', '))}. A long is ahead by its return less the index's. A short is ahead by how much worse the stock did than the index. Each runs from the first trading day on or after the call to the latest price${comps.some((i) => i.status === 'closed') ? ', or to the day the call was closed' : ''}. Price change only, dividends not included. The average counts every call equally, whatever its size or age.</p>
     </div>`;
   }
 
@@ -1442,6 +1640,7 @@
       if (c === 'thesis') setMain('THESIS', i.ticker, secNav(i, 'thesis') + viewThesis(i));
       else if (c === 'model') setMain('MODEL', i.ticker, secNav(i, 'model') + viewModel(i));
       else if (c === 'cp') setMain('CHECKPOINTS', i.ticker, secNav(i, 'cp') + viewCheckpoints(i.ticker));
+      else if (c === 'comp') setMain('COMP', i.ticker, secNav(i, 'comp') + viewComp(i));
       else {
         setMain('DESCRIPTION', i.ticker, secNav(i, 'des') + viewDes(i));
         if (c === 'n') { state.wire.ticker = i.ticker; renderWire(); return focusPanel('p-wire'); }
@@ -1456,6 +1655,7 @@
       else setMain('PROJECTS', '', viewProjects());
     } else if (a === 'help') setMain('HELP', '', viewHelp());
     else if (a === 'cp') setMain('CHECKPOINTS', '', viewCheckpoints());
+    else if (a === 'comp') setMain('COMP', 'ALL CALLS', viewCompAll());
     else setMain('ABOUT', '', viewAbout());
     focusPanel('p-main');
     if (a === 'contact') focusPanel('p-contact');  // an old link to the contact page
@@ -1472,6 +1672,8 @@
   ];
   // Offered once the profile note has an email address. Goes in straight before CONTACT.
   if (D.owner.email) GLOBAL.splice(3, 0, { code: 'MSG', desc: 'Write me a message; it opens in your email program', run: () => openMsg() });
+  // Offered once a call has index prices to be compared with. Goes in straight after CP.
+  if (comps.length) GLOBAL.splice(3, 0, { code: 'COMP', desc: 'Every call against its index fund over the same dates', run: () => go('#/comp') });
   // Offered once a ticker note has a Checkpoints section.
   if (anyCheckpoints) GLOBAL.splice(3, 0, { code: 'CP', desc: 'Checkpoints: what each call needs next, soonest first', run: () => go('#/cp') });
   // Offered once there is a project. Goes in straight after N.
@@ -1480,6 +1682,7 @@
     { code: 'DES', desc: 'Overview: my call, thesis in brief, checkpoints, chart and catalysts', sub: '' },
     { code: 'THESIS', desc: 'The full written thesis', sub: '/thesis' },
     { code: 'MODEL', desc: 'Financial model and scenario valuation', sub: '/model' },
+    { code: 'COMP', desc: 'This call against its index fund over the same dates', sub: '/comp' },
     { code: 'CP', desc: 'Checkpoints for this name: what the call needs, and what would close it', sub: '/cp' },
     { code: 'N', desc: 'Updates on this name', sub: '/n' },
   ];
@@ -1496,7 +1699,7 @@
     const items = [];
     if (tk) {
       // CP is offered only for a ticker that has checkpoints.
-      TICKER.filter((c) => c.code !== 'CP' || ideaBy[tk].checkpoints).filter(match).sort(rank).forEach((c) => items.push({
+      TICKER.filter((c) => (c.code !== 'CP' || ideaBy[tk].checkpoints) && (c.code !== 'COMP' || comp(ideaBy[tk]))).filter(match).sort(rank).forEach((c) => items.push({
         group: 'COMMANDS',
         html: `<span class="chip tk">${tk}</span><span class="chip">${c.code}</span><span class="desc">${esc(c.desc)}</span>`,
         run: () => (c.run ? c.run(tk) : go(`#/s/${tk}${c.sub}`)),
