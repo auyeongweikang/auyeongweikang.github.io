@@ -83,6 +83,15 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
   padding: 2px 9px;
 }
 .clock { color: var(--muted); font-weight: 500; }
+/* First-visit demo: the bar types a command by itself, with a block cursor after it. */
+.demo-type { flex: 1; min-width: 0; font-size: 15px; text-transform: uppercase; white-space: pre; cursor: text; }
+.demo-type::after {
+  content: ""; display: inline-block; width: 8px; height: 15px; margin-left: 2px; vertical-align: -2px;
+  background: var(--accent); animation: caret 1s steps(1) infinite;
+}
+@keyframes caret { 50% { opacity: 0; } }
+.demo-note { flex: none; color: var(--dim); font-size: 12px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .demo-type::after { animation: none; } }
 
 /* ---------- command palette ---------- */
 .palette {
@@ -319,6 +328,30 @@ ul.tight li { margin-bottom: 5px; }
 .rows a:hover { text-decoration-color: currentColor; }
 #p-contact .lead { margin-top: 0; }
 #p-contact .rows a { overflow-wrap: anywhere; }
+/* MSG: a message written here opens in the visitor's own email program. */
+.msg { max-width: 720px; border: 1px solid var(--line); }
+.msg-row { display: flex; align-items: baseline; gap: 10px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.msg-row .k { flex: none; width: 58px; color: var(--muted); }
+.msg-row .v { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.msg-row a { color: inherit; text-decoration: underline; text-decoration-color: var(--dim); text-underline-offset: 2px; }
+.msg-row a:hover { text-decoration-color: currentColor; }
+.msg-row input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; padding: 0; }
+.msg-row .lnk { flex: none; color: var(--muted); }
+.msg-row .lnk:hover { color: #fff; }
+.msg textarea {
+  display: block; width: 100%; min-height: 96px; resize: vertical; padding: 6px 8px;
+  background: none; border: 0; outline: 0; border-radius: 0; line-height: 1.5;
+  color: inherit; font: inherit;
+}
+.msg :is(input, textarea)::placeholder { color: var(--dim); }
+.msg-row:focus-within, .msg textarea:focus { background: var(--panel2); }
+.msg-foot { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-top: 1px solid var(--line); }
+.msg-foot .send {
+  flex: none; background: var(--accent); color: var(--accent-ink); font-weight: 700; letter-spacing: .04em;
+  padding: 1px 12px; text-decoration: none;
+}
+.msg-foot .send:hover { filter: brightness(1.12); }
+.msg-foot .note { min-width: 0; }
 .des-side h2:first-child { margin-top: 0; }
 .mini td { padding: 3px 9px 3px 0; text-align: left; vertical-align: top; }
 .mini td:first-child { color: var(--amber); white-space: nowrap; }

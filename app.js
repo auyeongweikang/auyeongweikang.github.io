@@ -796,11 +796,39 @@
     const o = D.owner;
     const a = (href, text) => `<a href="${esc(href)}"${/^https?:/.test(href) ? ' target="_blank" rel="noopener"' : ''}>${esc(text)}</a>`;
     const rows = [];
-    if (o.email) rows.push(['Email', a('mailto:' + o.email, o.email)]);
     if (o.phone) rows.push(['Phone', a('tel:' + o.phone.replace(/[^\d+]/g, ''), o.phone)]);
     o.links.forEach(([label, addr]) => rows.push([label, a(web(addr), addr)]));
+    // MSG: the message is written here and sent from the visitor's own email program,
+    // so nothing typed on this page goes anywhere until they press send there.
+    const msg = o.email ? `<h2>Message</h2>
+      <div class="msg">
+        <div class="msg-row"><span class="k">To</span><span class="v">${a('mailto:' + o.email, o.email)}</span><button class="lnk" data-act="copyaddr">Copy address</button></div>
+        <label class="msg-row"><span class="k">Subject</span><input id="msgSubj" autocomplete="off" value="${esc(MSG_SUBJECT)}"></label>
+        <textarea id="msgBody" rows="5" placeholder="Write a message" aria-label="Message"></textarea>
+        <div class="msg-foot"><a class="send" id="msgSend" href="${esc(msgHref(MSG_SUBJECT, ''))}">SEND</a><span class="note" id="msgNote">${MSG_NOTE}</span></div>
+      </div>` : '';
     return `<div class="page"><p class="lead">Open to roles in equity research and investing.</p>
-      <table class="rows">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('')}</table></div>`;
+      ${msg}
+      ${rows.length ? `${msg ? '<h2>Profiles</h2>' : ''}<table class="rows">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('')}</table>` : ''}</div>`;
+  }
+  const MSG_SUBJECT = 'Your Portfolio Terminal';
+  const MSG_NOTE = 'Opens your email program with this filled in. Ctrl + Enter sends.';
+  function msgHref(subject, body) {
+    const q = [['subject', subject.trim()], ['body', body]].filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
+    return `mailto:${D.owner.email}${q.length ? '?' + q.join('&') : ''}`;
+  }
+  // MSG opens the window ready to type in. With a ticker (ABVX MSG) the subject names it,
+  // unless the visitor has already written a subject of their own.
+  function openMsg(tk) {
+    focusPanel('p-contact');
+    const s = $('#msgSubj'), b = $('#msgBody');
+    if (!s) return;
+    if (!s.dataset.typed) { s.value = tk ? `Your ${tk} thesis` : MSG_SUBJECT; syncMsg(); }
+    b.focus({ preventScroll: true });
+  }
+  function syncMsg() {
+    $('#msgSend').href = msgHref($('#msgSubj').value, $('#msgBody').value);
+    $('#msgNote').textContent = MSG_NOTE;
   }
   function viewHelp() {
     const g = GLOBAL.map((c) => `<tr><td class="l">${cmdChip(c.code)}</td><td class="l">${esc(c.desc)}</td></tr>`).join('');
@@ -811,7 +839,7 @@
       ${projects.length ? `<p class="muted" style="margin-top:8px">Type PRJ and a project’s number, for example <b>PRJ ${projects[0].n}</b>, to open it. Or run PRJ on its own: it stays in the command bar, and a number alone then opens that project.</p>` : ''}
       <h2>Ticker commands</h2><p class="muted">Type a ticker, then a command. For example <b>HLXB MODEL</b>.</p>
       <table class="grid" style="white-space:normal"><tbody>${t}</tbody></table>
-      <h2>Keys</h2>${kv([['` or /', 'Focus the command bar'], ['↑ ↓', 'Move through results'], ['Enter', 'Run the highlighted result'], ['Esc', 'Close the results'], ['Backspace on empty bar', 'Clear the loaded ticker or PRJ']])}
+      <h2>Keys</h2>${kv([['` or /', 'Focus the command bar'], ['↑ ↓', 'Move through results'], ['Enter', 'Run the highlighted result'], ['Esc', 'Close the results'], ['Backspace on empty bar', 'Clear the loaded ticker or PRJ']].concat(D.owner.email ? [['Ctrl + Enter in a message', 'Send it']] : []))}
       <h2>Windows</h2>${kv([['Drag a title bar', 'Move the window'], ['Drag an edge or corner', 'Resize that window only; it can overlap the others'], ['Click a window', 'Bring it to the front'], ['Double-click a title bar, or ⤢', 'Maximise or restore'], ['×', 'Close; QM, N, CONTACT or any page command reopens it'], ['Reset layout', 'Back to the default arrangement']])}
       <h2>About the data</h2><p class="muted">Prices are entered by hand and dated, not live. Views are personal and not investment advice.</p></div>`;
   }
@@ -1223,13 +1251,13 @@
     const main = rect(0.52, 0, 0.48, 1);
     // Contact starts closed, except on the About screen. The CONTACT command opens
     // it in the lower left, beside the main window rather than over it.
-    const contact = rect(0.17, 0.6, 0.35, 0.4, false);
+    const contact = rect(0.17, 0.4, 0.35, 0.6, false);
     if (name === 'Tracker') return { 'p-qm': rect(0, 0, 0.52, 1), 'p-wire': rect(0, 0.5, 0.52, 0.5, false), 'p-main': main, 'p-contact': contact };
     if (name === 'Wire') return { 'p-qm': rect(0, 0, 0.52, 0.5, false), 'p-wire': rect(0, 0, 0.52, 1), 'p-main': main, 'p-contact': contact };
     if (name === 'About') return { 'p-qm': rect(0, 0, 0.52, 0.5, false), 'p-wire': rect(0, 0.5, 0.52, 0.5, false), 'p-main': rect(0, 0, 0.66, 1), 'p-contact': rect(0.66, 0, 0.34, 1) };
     return wsEl.clientWidth >= 1100
       ? { 'p-qm': rect(0, 0, 0.52, 0.5), 'p-wire': rect(0, 0.5, 0.52, 0.5), 'p-main': main, 'p-contact': contact }
-      : { 'p-qm': rect(0, 0, 1, 0.4), 'p-wire': rect(0, 0.4, 0.45, 0.6), 'p-main': rect(0.45, 0.4, 0.55, 0.6), 'p-contact': rect(0, 0.6, 0.45, 0.4, false) };
+      : { 'p-qm': rect(0, 0, 1, 0.4), 'p-wire': rect(0, 0.4, 0.45, 0.6), 'p-main': rect(0.45, 0.4, 0.55, 0.6), 'p-contact': rect(0, 0.4, 0.45, 0.6, false) };
   }
   function applyLayout() {
     const W = wsEl.clientWidth, H = wsEl.clientHeight;
@@ -1438,9 +1466,12 @@
     { code: 'ABOUT', desc: 'Who I am and what this terminal is', run: () => go('#/about') },
     { code: 'QM', desc: 'Quote monitor: every idea I track, with my call and the return since', run: () => focusPanel('p-qm') },
     { code: 'N', desc: 'Updates wire: thesis changes, model revisions and notes', run: () => { clearWire(); focusPanel('p-wire'); } },
-    { code: 'CONTACT', desc: 'Email, phone and profiles, in a window of their own', run: () => focusPanel('p-contact') },
+    { code: 'CONTACT', desc: 'Email, a message box and profiles, in a window of their own', run: () => focusPanel('p-contact') },
+    { code: 'DEMO', desc: 'Watch the command bar open a thesis by itself', run: () => startDemo(300) },
     { code: 'HELP', desc: 'Commands and keyboard shortcuts', run: () => go('#/help') },
   ];
+  // Offered once the profile note has an email address. Goes in straight before CONTACT.
+  if (D.owner.email) GLOBAL.splice(3, 0, { code: 'MSG', desc: 'Write me a message; it opens in your email program', run: () => openMsg() });
   // Offered once a ticker note has a Checkpoints section.
   if (anyCheckpoints) GLOBAL.splice(3, 0, { code: 'CP', desc: 'Checkpoints: what each call needs next, soonest first', run: () => go('#/cp') });
   // Offered once there is a project. Goes in straight after N.
@@ -1452,6 +1483,7 @@
     { code: 'CP', desc: 'Checkpoints for this name: what the call needs, and what would close it', sub: '/cp' },
     { code: 'N', desc: 'Updates on this name', sub: '/n' },
   ];
+  if (D.owner.email) TICKER.push({ code: 'MSG', desc: 'Message me about this name', run: (tk) => openMsg(tk) });
   const input = $('#cmdInput'), pal = $('#palette');
 
   function buildResults(raw) {
@@ -1467,7 +1499,7 @@
       TICKER.filter((c) => c.code !== 'CP' || ideaBy[tk].checkpoints).filter(match).sort(rank).forEach((c) => items.push({
         group: 'COMMANDS',
         html: `<span class="chip tk">${tk}</span><span class="chip">${c.code}</span><span class="desc">${esc(c.desc)}</span>`,
-        run: () => go(`#/s/${tk}${c.sub}`),
+        run: () => (c.run ? c.run(tk) : go(`#/s/${tk}${c.sub}`)),
       }));
     }
     if (!typedTicker) {
@@ -1629,6 +1661,11 @@
       r.querySelectorAll('.fs button').forEach((b) => b.classList.toggle('on', +b.dataset.v === state.font));
       return;
     }
+    if (d.act === 'copyaddr') {
+      const done = () => { t.textContent = 'Copied'; setTimeout(() => (t.textContent = 'Copy address'), 1500); };
+      try { navigator.clipboard.writeText(D.owner.email).then(done, done); } catch (_) { done(); }
+      return;
+    }
     if (d.act === 'copy') {
       const done = () => { t.textContent = 'Link copied'; setTimeout(() => (t.textContent = 'Copy link'), 1500); };
       try { navigator.clipboard.writeText(location.href).then(done, done); } catch (_) { done(); }
@@ -1645,6 +1682,89 @@
   $('#wireType').addEventListener('change', (e) => { state.wire.type = e.target.value; renderWire(); });
   $('#wireTk').addEventListener('click', () => { state.wire.ticker = null; renderWire(); });
   $('#bannerText').addEventListener('click', () => go(`#/n/${posts[0].id}`));
+  // The message fields are drawn once at boot, so these listen on the window that holds them.
+  $('#contactBody').addEventListener('input', (e) => {
+    if (e.target.id === 'msgSubj') e.target.dataset.typed = '1';
+    if (e.target.closest('.msg')) syncMsg();
+  });
+  $('#contactBody').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.target.closest('.msg')) { e.preventDefault(); $('#msgSend').click(); }
+  });
+  $('#contactBody').addEventListener('click', (e) => {
+    if (e.target.id === 'msgSend') $('#msgNote').textContent = 'Opened in your email program. If nothing happened, copy the address above.';
+  });
+
+  // ---------- first-visit demo ----------
+  // Once per browser, the command bar types a ticker and THESIS by itself and runs it, to show
+  // how the terminal is driven. Any key, click, tap or scroll stops it. DEMO replays it.
+  const DEMO_STORE = 'pt-demo-v1', DEMO_STOP = ['keydown', 'pointerdown', 'wheel', 'touchstart'];
+  const typeEl = $('#demoType');
+  let demo = null; // the timers of a demo that is waiting to start or running
+  // The thesis it opens: the ticker named by "demo" in the profile note, else the active
+  // call held with high conviction, else the first active call that has a thesis.
+  function demoCommand() {
+    const named = ideaBy[D.owner.demo || ''];
+    const active = D.ideas.filter((i) => i.status === 'active' && i.thesisDoc);
+    const i = named && named.thesisDoc ? named : active.find((x) => /high/i.test(x.conviction || '')) || active[0];
+    return i ? `${i.ticker} THESIS` : null;
+  }
+  function demoUi(on) {
+    input.hidden = on;
+    typeEl.hidden = $('#demoNote').hidden = !on;
+    if (!on) typeEl.textContent = '';
+  }
+  function stopDemo() {
+    if (!demo) return;
+    demo.forEach(clearTimeout);
+    demo = null;
+    DEMO_STOP.forEach((ev) => document.removeEventListener(ev, skipDemo, true));
+    demoUi(false);
+  }
+  function skipDemo(e) {
+    const inBar = !!(e.target.closest && e.target.closest('.cmd'));
+    stopDemo();
+    input.value = '';
+    closePal();
+    // A click on the bar itself means the visitor wants to type: hand it over to them.
+    if (inBar) setTimeout(() => input.focus(), 0);
+  }
+  function startDemo(delay) {
+    const text = demoCommand();
+    if (!text || demo) return;
+    demo = [];
+    const at = (ms, fn) => demo.push(setTimeout(fn, ms));
+    // Armed a moment later, so the key or click that ran DEMO does not stop it.
+    at(0, () => DEMO_STOP.forEach((ev) => document.addEventListener(ev, skipDemo, true)));
+    let t = delay;
+    at(t, () => { closePal(); input.blur(); input.value = ''; demoUi(true); });
+    t += 500;
+    [...text].forEach((ch, k) => {
+      // A pause after the ticker lets its list of commands be read before the next word narrows it.
+      t += ch === ' ' ? 550 : 80 + (k % 3) * 25;
+      at(t, () => { input.value = typeEl.textContent = text.slice(0, k + 1); openPal(); });
+    });
+    at(t + 950, () => { const k = state.pal.idx; stopDemo(); runPal(k); });
+  }
+  // Not on a phone (no room for the bar's results), not for a visitor who asked for less motion,
+  // and not on a link that points at a page of its own: that page is what they came for.
+  function firstVisitDemo() {
+    const front = /^(#\/?(about)?)?$/.test(location.hash);
+    let seen = true;
+    try { seen = !!localStorage.getItem(DEMO_STORE); } catch (_) { /* storage unavailable: never play */ }
+    if (seen || !front || narrow() || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const play = () => {
+      try { localStorage.setItem(DEMO_STORE, '1'); } catch (_) { /* ignore */ }
+      startDemo(1400);
+    };
+    // A tab opened in the background waits until it is looked at.
+    if (document.visibilityState === 'visible') return play();
+    const onShow = () => {
+      if (document.visibilityState !== 'visible') return;
+      document.removeEventListener('visibilitychange', onShow);
+      play();
+    };
+    document.addEventListener('visibilitychange', onShow);
+  }
 
   // ---------- text size (the AAA at the right end of the status bar) ----------
   // Sets --ui-scale, which style.css applies to the top bar and to the contents
@@ -1680,4 +1800,5 @@
   window.addEventListener('hashchange', route);
   route();
   booted = true;
+  firstVisitDemo();
 })();

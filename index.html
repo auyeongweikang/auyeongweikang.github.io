@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <!-- The ?v= suffix makes browsers drop copies they cached before serve.py turned caching off. -->
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <header class="topbar">
@@ -17,6 +17,9 @@
       <button class="ctx" id="ctx" hidden title="Clear what is loaded in the command bar"></button>
       <input id="cmdInput" autocomplete="off" spellcheck="false" aria-label="Command bar"
              placeholder="Type a command or a ticker. Press ` to focus">
+      <!-- The first-visit demo types here in place of the input, which stays empty for the visitor. -->
+      <span class="demo-type" id="demoType" hidden></span>
+      <span class="demo-note" id="demoNote" hidden>Demo · any key skips</span>
     </div>
     <nav class="pins" id="pins" aria-label="Shortcuts"></nav>
     <div class="top-right">
@@ -94,6 +97,7 @@
     <section class="panel" id="p-contact">
       <div class="panel-head">
         <span class="title">CONTACT</span>
+        <span class="sub">MSG</span>
         <span class="sp"></span>
         <button class="icon" data-act="max" title="Maximise or restore">⤢</button>
         <button class="icon" data-act="close" title="Close">×</button>
@@ -123,6 +127,6 @@
   <!-- data.js is rebuilt on every update. The time in its address makes the browser fetch the current
        copy on each visit, so a visitor never sees content that has since been changed or removed. -->
   <script>document.write('<script src="data.js?t=' + Date.now() + '"><\/script>');</script>
-  <script src="app.js?v=16"></script>
+  <script src="app.js?v=17"></script>
 </body>
 </html>
