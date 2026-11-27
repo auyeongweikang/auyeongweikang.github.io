@@ -1003,17 +1003,30 @@
         <div class="msg-row"><span class="k">To</span><span class="v">${a('mailto:' + o.email, o.email)}</span><button class="lnk" data-act="copyaddr">Copy address</button></div>
         <label class="msg-row"><span class="k">Subject</span><input id="msgSubj" autocomplete="off" value="${esc(MSG_SUBJECT)}"></label>
         <textarea id="msgBody" rows="5" placeholder="Write a message" aria-label="Message"></textarea>
-        <div class="msg-foot"><a class="send" id="msgSend" href="${esc(msgHref(MSG_SUBJECT, ''))}">SEND</a><span class="note" id="msgNote">${MSG_NOTE}</span></div>
+        <div class="msg-foot"><a class="send" id="msgSend" href="${esc(msgHref(MSG_SUBJECT, ''))}">SEND</a>
+          <span class="msg-alt">or with
+            <a id="msgGmail" target="_blank" rel="noopener" href="${esc(msgWeb('gmail', MSG_SUBJECT, ''))}">Gmail</a>
+            <a id="msgOutlook" target="_blank" rel="noopener" href="${esc(msgWeb('outlook', MSG_SUBJECT, ''))}">Outlook</a>
+            <button data-act="copymsg">Copy message</button></span></div>
+        <div class="note msg-note" id="msgNote">${MSG_NOTE}</div>
       </div>` : '';
     return `<div class="page"><p class="lead">Open to roles in equity research and investing.</p>
       ${msg}
       ${rows.length ? `${msg ? '<h2>Profiles</h2>' : ''}<table class="rows">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('')}</table>` : ''}</div>`;
   }
   const MSG_SUBJECT = 'Your Portfolio Terminal';
-  const MSG_NOTE = 'Opens your email program with this filled in. Ctrl + Enter sends.';
+  const MSG_NOTE = 'SEND (or Ctrl + Enter) opens the email program on your computer. Gmail and Outlook open in the browser instead.';
   function msgHref(subject, body) {
     const q = [['subject', subject.trim()], ['body', body]].filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
     return `mailto:${D.owner.email}${q.length ? '?' + q.join('&') : ''}`;
+  }
+  // A computer that only uses webmail has no email program for SEND to open, so the same
+  // message can also be started in Gmail or Outlook on the web, each in a new tab.
+  function msgWeb(kind, subject, body) {
+    const e = encodeURIComponent;
+    return kind === 'gmail'
+      ? `https://mail.google.com/mail/?view=cm&fs=1&to=${e(D.owner.email)}&su=${e(subject.trim())}&body=${e(body)}`
+      : `https://outlook.live.com/mail/0/deeplink/compose?to=${e(D.owner.email)}&subject=${e(subject.trim())}&body=${e(body)}`;
   }
   // MSG opens the window ready to type in. With a ticker (ABVX MSG) the subject names it,
   // unless the visitor has already written a subject of their own.
@@ -1025,8 +1038,17 @@
     b.focus({ preventScroll: true });
   }
   function syncMsg() {
-    $('#msgSend').href = msgHref($('#msgSubj').value, $('#msgBody').value);
-    $('#msgNote').textContent = MSG_NOTE;
+    const s = $('#msgSubj').value, b = $('#msgBody').value;
+    $('#msgSend').href = msgHref(s, b);
+    $('#msgGmail').href = msgWeb('gmail', s, b);
+    $('#msgOutlook').href = msgWeb('outlook', s, b);
+    msgNote(MSG_NOTE);
+  }
+  // The line under the message box. "loud" turns it from grey to white when it needs reading.
+  function msgNote(text, loud) {
+    const n = $('#msgNote');
+    n.textContent = text;
+    n.classList.toggle('loud', !!loud);
   }
   function viewHelp() {
     const g = GLOBAL.map((c) => `<tr><td class="l">${cmdChip(c.code)}</td><td class="l">${esc(c.desc)}</td></tr>`).join('');
@@ -1671,7 +1693,7 @@
     { code: 'HELP', desc: 'Commands and keyboard shortcuts', run: () => go('#/help') },
   ];
   // Offered once the profile note has an email address. Goes in straight before CONTACT.
-  if (D.owner.email) GLOBAL.splice(3, 0, { code: 'MSG', desc: 'Write me a message; it opens in your email program', run: () => openMsg() });
+  if (D.owner.email) GLOBAL.splice(3, 0, { code: 'MSG', desc: 'Write me a message and send it from your own email', run: () => openMsg() });
   // Offered once a call has index prices to be compared with. Goes in straight after CP.
   if (comps.length) GLOBAL.splice(3, 0, { code: 'COMP', desc: 'Every call against its index fund over the same dates', run: () => go('#/comp') });
   // Offered once a ticker note has a Checkpoints section.
@@ -1864,6 +1886,12 @@
       r.querySelectorAll('.fs button').forEach((b) => b.classList.toggle('on', +b.dataset.v === state.font));
       return;
     }
+    if (d.act === 'copymsg') {
+      const text = `To: ${D.owner.email}\nSubject: ${$('#msgSubj').value.trim()}\n\n${$('#msgBody').value}`;
+      const done = () => msgNote('Copied the address, subject and message. Paste them into any email.', true);
+      try { navigator.clipboard.writeText(text).then(done, done); } catch (_) { done(); }
+      return;
+    }
     if (d.act === 'copyaddr') {
       const done = () => { t.textContent = 'Copied'; setTimeout(() => (t.textContent = 'Copy address'), 1500); };
       try { navigator.clipboard.writeText(D.owner.email).then(done, done); } catch (_) { done(); }
@@ -1894,7 +1922,17 @@
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.target.closest('.msg')) { e.preventDefault(); $('#msgSend').click(); }
   });
   $('#contactBody').addEventListener('click', (e) => {
-    if (e.target.id === 'msgSend') $('#msgNote').textContent = 'Opened in your email program. If nothing happened, copy the address above.';
+    if (e.target.id !== 'msgSend') return;
+    // An email program that opens takes the focus away from this page. If the page still has
+    // it a moment later, most likely nothing opened, so the other ways to send are pointed out.
+    let left = false;
+    const onBlur = () => { left = true; };
+    window.addEventListener('blur', onBlur);
+    setTimeout(() => {
+      window.removeEventListener('blur', onBlur);
+      if (left) msgNote('Opened in your email program.');
+      else msgNote('If no email program opened, this computer has none set up. Send with Gmail or Outlook instead, or copy the message.', true);
+    }, 1200);
   });
 
   // ---------- first-visit demo ----------

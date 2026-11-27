@@ -355,7 +355,16 @@ ul.tight li { margin-bottom: 5px; }
 }
 .msg :is(input, textarea)::placeholder { color: var(--dim); }
 .msg-row:focus-within, .msg textarea:focus { background: var(--panel2); }
-.msg-foot { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-top: 1px solid var(--line); }
+.msg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 5px 8px; border-top: 1px solid var(--line); }
+/* The other ways to send, for a computer with no email program: quiet next to SEND. */
+.msg-alt { color: var(--muted); }
+.msg-alt :is(a, button) {
+  margin-left: 4px; padding: 0 7px; color: var(--text); text-decoration: none;
+  border: 1px solid var(--line2);
+}
+.msg-alt :is(a, button):hover { background: var(--panel2); color: #fff; }
+.msg-note { padding: 4px 8px 6px; border-top: 1px solid var(--line); line-height: 1.5; }
+.msg-note.loud { color: var(--text); }
 .msg-foot .send {
   flex: none; background: var(--accent); color: var(--accent-ink); font-weight: 700; letter-spacing: .04em;
   padding: 1px 12px; text-decoration: none;
