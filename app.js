@@ -1901,6 +1901,8 @@
   // Once per browser, the command bar types a ticker and THESIS by itself and runs it, to show
   // how the terminal is driven. Any key, click, tap or scroll stops it. DEMO replays it.
   const DEMO_STORE = 'pt-demo-v1', DEMO_STOP = ['keydown', 'pointerdown', 'wheel', 'touchstart'];
+  // The demo's speed, in milliseconds. Raise these to slow it down, lower them to speed it up.
+  const DEMO_PACE = { before: 900, key: 170, jitter: 35, afterTicker: 1300, beforeRun: 1800 };
   const typeEl = $('#demoType');
   let demo = null; // the timers of a demo that is waiting to start or running
   // The thesis it opens: the ticker named by "demo" in the profile note, else the active
@@ -1940,13 +1942,15 @@
     at(0, () => DEMO_STOP.forEach((ev) => document.addEventListener(ev, skipDemo, true)));
     let t = delay;
     at(t, () => { closePal(); input.blur(); input.value = ''; demoUi(true); });
-    t += 500;
+    // Paced to be followed by someone seeing the bar for the first time: a beat on the empty
+    // bar, unhurried keystrokes, a pause after the ticker so its list of commands can be read
+    // before the next word narrows it, and a longer one on the result before it runs.
+    t += DEMO_PACE.before;
     [...text].forEach((ch, k) => {
-      // A pause after the ticker lets its list of commands be read before the next word narrows it.
-      t += ch === ' ' ? 550 : 80 + (k % 3) * 25;
+      t += ch === ' ' ? DEMO_PACE.afterTicker : DEMO_PACE.key + (k % 3) * DEMO_PACE.jitter;
       at(t, () => { input.value = typeEl.textContent = text.slice(0, k + 1); openPal(); });
     });
-    at(t + 950, () => { const k = state.pal.idx; stopDemo(); runPal(k); });
+    at(t + DEMO_PACE.beforeRun, () => { const k = state.pal.idx; stopDemo(); runPal(k); });
   }
   // Not on a phone (no room for the bar's results), not for a visitor who asked for less motion,
   // and not on a link that points at a page of its own: that page is what they came for.
